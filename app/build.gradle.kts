@@ -3,6 +3,8 @@ android {
     namespace = "com.brain.gym"; compileSdk = 35
     defaultConfig { applicationId = "com.brain.gym"; minSdk = 24; targetSdk = 35; versionCode = 1; versionName = "1.0" }
     buildFeatures { compose = true }
+    compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.09.00"))
