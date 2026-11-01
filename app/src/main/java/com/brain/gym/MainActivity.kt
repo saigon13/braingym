@@ -1,12 +1,26 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.VIBRATE"/>
-    <application android:label="Brain Gym" android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-        <!-- TEST AdMob app id. Replace with yours before release -->
-        <meta-data android:name="com.google.android.gms.ads.APPLICATION_ID" android:value="ca-app-pub-3940256099942544~3347511713"/>
-        <activity android:name=".MainActivity" android:exported="true">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-        </activity>
-    </application>
-</manifest>
+package com.brain.gym
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import com.google.android.gms.ads.MobileAds
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(b: Bundle?) {
+        super.onCreate(b)
+        MobileAds.initialize(this)
+        Ads.load(this)
+        val st = Store(this)
+        setContent {
+            MaterialTheme(darkColorScheme(background = Color.Black, surface = Color.Black, primary = Color.White, onBackground = Color.White, onSurface = Color.White)) {
+                Surface(Modifier.fillMaxSize(), color = Color.Black) { AppV2(st) }
+            }
+        }
+    }
+}
