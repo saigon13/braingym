@@ -59,11 +59,11 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     when (c.id) {
         "num" -> NumberMem(m, d, f); "seq" -> SeqMem(m, d, f); "chimp" -> Chimp(d, f); "pairs" -> Pairs(m, d, f)
         "nback" -> NBack(d, f); "matrix" -> Matrix(d, f); "words" -> Words(d, f); "dual" -> Dual(d, f); "corsi" -> Corsi(d, f)
-        "rev" -> RevSpan(d, f); "flash" -> Flash(m, d, f); "react" -> Reaction(m, f); "gonogo" -> GoNoGo(d, f)
-        "stroop" -> Stroop(f); "schulte" -> Schulte(d, f); "cmatch" -> ColorMatch(f); "whack" -> Whack(d, f)
-        "odd" -> Odd(d, f); "flank" -> Flanker(f); "g2048" -> G2048(d, f); "lights" -> Lights(d, f)
+        "rev" -> RevSpan(d, f); "flash" -> Flash(m, d, f); "react" -> Reaction(m, d, f); "gonogo" -> GoNoGo(d, f)
+        "stroop" -> Stroop(d, f); "schulte" -> Schulte(d, f); "cmatch" -> ColorMatch(d, f); "whack" -> Whack(d, f)
+        "odd" -> Odd(d, f); "flank" -> Flanker(d, f); "g2048" -> G2048(d, f); "lights" -> Lights(d, f)
         "sudoku" -> Sudoku(d, f); "mines" -> Mines(d, f); "chess" -> ChessBoard(m, d, f)
-        "flappy" -> Flappy(d, f); "snake" -> Snake(d, f)
+        "flappy" -> Flappy(d, f); "snake" -> Snake(m, d, f); "stack" -> StackGame(d, f); "dodge" -> Dodge(d, f); "tiles" -> TapTiles(d, f)
     }
 }
 
@@ -86,6 +86,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     val act = LocalContext.current as Activity
     val lo = LocalLifecycleOwner.current
     LaunchedEffect(Unit) { Sfx.sound = st.bool("snd", true); Sfx.vib = st.bool("vib", true) }
+    LaunchedEffect(Unit) { while (true) { delay(50); if (Pause.on) Pause.lost += 50 } }
     DisposableEffect(lo) {
         val ob = LifecycleEventObserver { _, e ->
             if (e == Lifecycle.Event.ON_RESUME) fg = true
@@ -108,9 +109,9 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
 
     val AC = listOf(Color(0xFF4DD0E1), Color(0xFFFFB74D), Color(0xFFB39DDB), Color(0xFF81C784))
     val c = g
-    val god = c != null && step >= 1 && diff == 3 && c.id in GODS
-    val ac = if (god) Color(0xFFFF5252) else if (c == null) AC[tab] else if (c.fn) AC[3] else if (c.logic) AC[2] else if (c.mem) AC[0] else AC[1]
-    val dd = if (c != null && diff >= 3 && c.id !in GODS) 2 else diff
+    val inGame = c != null && step >= 1
+    val god = inGame && diff == 3
+    val ac = if (inGame) DC[diff] else AC[tab]
     CompositionLocalProvider(LocalAccent provides ac) {
         Column(Modifier.fillMaxSize().background(Brush.verticalGradient(if (god) listOf(Color(0xFF2A0E0E), Color.Black) else listOf(Color(0xFF0E0E10), Color.Black))).padding(16.dp)) {
             if (c == null || step == 0) {
@@ -136,7 +137,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                 Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                     list.chunked(3).forEach { row ->
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
-                            row.forEach { x -> Tile(x, AC[tab], st, Modifier.width(tw.dp)) { g = x; mode = x.modes[0]; if (diff > 2 && x.id !in GODS) diff = 1; step = 1 } }
+                            row.forEach { x -> Tile(x, AC[tab], st, Modifier.width(tw.dp)) { g = x; mode = x.modes[0]; step = 1 } }
                         }
                         Sp(10)
                     }
@@ -165,9 +166,9 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                                 }
                                 Sp(14); Text("DIFFICULTY", color = Color.Gray, fontSize = 12.sp); Sp(6)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf("Easy", "Normal", "Hard", "God").take(if (c.id in GODS) 4 else 3).forEachIndexed { i, n -> Chip(n, i == diff, if (i == 3) Color(0xFFFF5252) else ac) { diff = i } }
+                                    listOf("Easy", "Normal", "Hard", "God").forEachIndexed { i, n -> Chip(n, i == diff, DC[i]) { diff = i } }
                                 }
-                                Sp(26); Big("START", ac) { ended = false; play = 0; Live.txt = ""; run++; Sfx.base = (c.id.hashCode() and 0x7fffffff) % 10; step = 2 }
+                                Sp(26); Big("START", ac) { ended = false; play = 0; Live.txt = ""; run++; Sfx.base = (c.id.hashCode() and 0x7fffffff) % 5; step = 2 }
                                 Sp(8); Chip("Scores and history", false, ac) { step = 4 }
                             }
                             2 -> {
@@ -180,7 +181,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                                     }
                                 }
                                 Box(contentAlignment = Alignment.Center) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) { key(run) { Play(c, mode, dd, fin) } }
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) { key(run) { Play(c, mode, diff, fin) } }
                                     if (ended) Box(Modifier.matchParentSize().pointerInput(Unit) {
                                         awaitPointerEventScope { while (true) { val e = awaitPointerEvent(); e.changes.forEach { it.consume() } } }
                                     })
@@ -191,9 +192,10 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                                     Text("%.1f".format(score), fontSize = 52.sp, fontWeight = FontWeight.Black)
                                     Text("${c.unit} · time ${fmt(play)}", color = Color.Gray)
                                     Sp(14); Big("RETRY", ac) { Ads.maybe(act) { ended = false; play = 0; Live.txt = ""; run++ } }
-                                    Sp(8); Chip("Menu", false, ac) { Ads.maybe(act) { ended = false; step = 1 } }
+                                    Sp(8); Chip("Menu", true, ac) { Ads.maybe(act) { ended = false; step = 1 } }
                                 }
                             }
+                            3 -> { }
                             else -> {
                                 Text("${c.name} history", fontSize = 20.sp, fontWeight = FontWeight.Bold); Sp(8)
                                 val h = st.hist(c.id)
