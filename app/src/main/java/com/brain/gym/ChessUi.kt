@@ -66,7 +66,7 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     LaunchedEffect(ix, h.size, over) {
         if (!over && pos.w != human) {
             think = true; delay(300)
-            val mv = withContext(Dispatchers.Default) { chBest(pos, listOf(1, 2, 3)[d], listOf(200, 30, 0)[d]) }
+            val mv = withContext(Dispatchers.Default) { chBest(pos, listOf(1, 2, 3, 4)[d], listOf(200, 30, 0, 0)[d]) }
             think = false; play(mv)
         }
     }
@@ -114,9 +114,9 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     }
     Spacer(Modifier.height(10.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Chip("Undo", false, ac) { undo() }; Chip("Redo", false, ac) { redo() }
-        Chip("Hint (ad)", false, ac) { getHint() }
-        if (over) Chip("Finish", true, ac) { done(res) } else Chip("Resign", false, ac) { done(0.0) }
+        Chip("Undo", true, ac) { undo() }; Chip("Redo", true, ac) { redo() }
+        Chip("Hint (ad)", true, ac) { getHint() }
+        if (over) Chip("Finish", true, ac) { done(res) } else Chip("Resign", true, ac) { done(0.0) }
     }
     if (popup) AlertDialog(
         onDismissRequest = { popup = false },
