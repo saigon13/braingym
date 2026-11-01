@@ -3,13 +3,14 @@ package com.brain.gym
 import android.app.Activity
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
@@ -33,8 +34,13 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     var think by remember { mutableStateOf(false) }
     var res by remember { mutableStateOf(0.0) }
     var hint by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var t0 by remember { mutableStateOf(now()) }
+    var endT by remember { mutableStateOf(0L) }
+    var popup by remember { mutableStateOf(false) }
     val cur = h[ix]; val pos = cur.p; val last = cur.last
     val moves = remember(pos) { chGen(pos) }
+
+    fun finish() { over = true; endT = (now() - t0) / 1000; popup = true }
 
     fun play(mv: Int) {
         val f = mv and 63; val t = (mv shr 6) and 63
@@ -45,14 +51,19 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
         h.add(Snap(np, f to t, ck)); ix = h.size - 1; sel = -1; hint = null
         val chk = chAtt(np.b, np.b.indexOf(if (np.w) 6 else -6), !np.w)
         if (chGen(np).isEmpty()) {
-            over = true
             if (chk) { val win = (!np.w) == human; res = if (win) 100.0 * (d + 1) else 0.0; msg = if (win) "Checkmate! You win" else "Checkmate. You lose" }
             else { res = 50.0 * (d + 1); msg = "Stalemate. Draw" }
-        } else if (ck >= 100 || np.b.count { it != 0 } == 2) { over = true; res = 50.0 * (d + 1); msg = "Draw" }
+            finish()
+        } else if (ck >= 100 || np.b.count { it != 0 } == 2) { res = 50.0 * (d + 1); msg = "Draw"; finish() }
         else msg = if (chk) "Check!" else ""
+        if (!over) { if (abs(pos.b[t]) != 0) Sfx.tick() else Sfx.click() }
     }
 
-    LaunchedEffect(ix, h.size) {
+    fun replay() {
+        h.clear(); h.add(Snap(chInit(), -1 to -1, 0)); ix = 0; sel = -1; msg = ""; over = false; think = false; hint = null; popup = false; t0 = now()
+    }
+
+    LaunchedEffect(ix, h.size, over) {
         if (!over && pos.w != human) {
             think = true; delay(300)
             val mv = withContext(Dispatchers.Default) { chBest(pos, listOf(1, 2, 3)[d], listOf(200, 30, 0)[d]) }
@@ -105,6 +116,13 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Chip("Undo", false, ac) { undo() }; Chip("Redo", false, ac) { redo() }
         Chip("Hint (ad)", false, ac) { getHint() }
-        if (over) Chip("Result", true, ac) { done(res) } else Chip("Resign", false, ac) { done(0.0) }
+        if (over) Chip("Finish", true, ac) { done(res) } else Chip("Resign", false, ac) { done(0.0) }
     }
+    if (popup) AlertDialog(
+        onDismissRequest = { popup = false },
+        title = { Text(msg, fontWeight = FontWeight.Bold) },
+        text = { Column { Text("Time played: ${fmt(endT)}"); Text("Score: ${"%.0f".format(res)} points") } },
+        confirmButton = { TextButton({ replay() }) { Text("Replay") } },
+        dismissButton = { TextButton({ popup = false; done(res) }) { Text("Finish") } }
+    )
 }
