@@ -17,33 +17,37 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 
 fun seqGen(n: Int, t: Int, r: Int): List<Int> {
-    val l = mutableListOf<Int>()
-    repeat(t) { i -> l.add(if (i >= n && (0..2).random() == 0) l[i - n] else { var x: Int; do { x = (0 until r).random() } while (l.isNotEmpty() && x == l.last()); x }) }
-    return l
+    val base = bagList(r, t).toMutableList()
+    for (i in n until t) if ((0..2).random() == 0) base[i] = base[i - n]
+    return base
 }
 val CL = listOf("RED" to Color.Red, "GREEN" to Color(0xFF2ECC71), "BLUE" to Color(0xFF4DA3FF), "YELLOW" to Color.Yellow)
 val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mirror ocean violin rocket basket forest anchor pillow lantern button castle dragon engine feather guitar hammer island jungle kettle ladder magnet needle orange planet quilt ribbon saddle tunnel umbrella valley wagon yogurt zipper".split(" ")
 
 // ---------- MEMORY ----------
 @Composable fun Matrix(d: Int, done: (Double) -> Unit) {
-    var n by remember { mutableStateOf(3 + d) }
-    val tg = remember(n) { (0..24).shuffled().take(n) }
-    var show by remember(n) { mutableStateOf(true) }; var hit by remember(n) { mutableStateOf(setOf<Int>()) }
-    LaunchedEffect(n) { wait(1500); show = false }
-    Status("Level ${n - 2 - d}")
-    Grid(5, 5) { i -> Cell(bg = if ((show && i in tg) || i in hit) Color.White else Color.Black) {
-        if (!show && i !in hit) { if (i in tg) { hit = hit + i; if (hit.size == n) n++ } else done(n - 3.0 - d) }
+    var lv by remember { mutableStateOf(1) }
+    val gs = minOf(6, 3 + (lv - 1) / 3 + d / 2)
+    val n = minOf(gs * gs / 2, gs - 1 + (lv - 1) % 3 + d / 2)
+    val tg = remember(lv) { (0 until gs * gs).shuffled().take(n) }
+    var show by remember(lv) { mutableStateOf(true) }; var hit by remember(lv) { mutableStateOf(setOf<Int>()) }
+    LaunchedEffect(lv) { wait(1200L + n * 100L); show = false }
+    Status("Level $lv · ${gs}×$gs grid · $n tiles")
+    Grid(gs, gs) { i -> Cell(bg = if (((show || Ended.on) && i in tg) || i in hit) Color.White else Color.Black) {
+        if (!show && !Ended.on && i !in hit) { if (i in tg) { hit = hit + i; if (hit.size == n) { Sfx.good(); lv++ } } else done(lv - 1.0) }
     } }
 }
 
 @Composable fun Words(d: Int, done: (Double) -> Unit) {
-    val k = 6 + d * 2; val all = remember { WORDS.shuffled() }; val seen = all.take(k); val opts = remember { all.take(k + 4).shuffled() }
-    var ph by remember { mutableStateOf(0) }; var sel by remember { mutableStateOf(setOf<String>()) }
-    LaunchedEffect(Unit) { wait(k * 900L); ph = 1 }
-    if (ph == 0) { Status("Memorise these words"); Text(seen.joinToString("\n"), fontSize = 24.sp, fontWeight = FontWeight.Medium) } else {
-        Status("Select the words you saw")
-        opts.forEach { w -> Btn((if (w in sel) "● " else "") + w) { sel = if (w in sel) sel - w else sel + w } }
-        Btn("SUBMIT") { done(maxOf(0, sel.count { it in seen } - sel.count { it !in seen }).toDouble()) }
+    var lv by remember { mutableStateOf(1) }
+    val k = spanLen(d, lv, intArrayOf(3, 4, 6, 8), intArrayOf(4, 6, 8, 12))
+    val all = remember(lv) { WORDS.shuffled() }; val seen = all.take(k); val opts = remember(lv) { all.take(k + 4).shuffled() }
+    var ph by remember(lv) { mutableStateOf(0) }; var sel by remember(lv) { mutableStateOf(setOf<String>()) }
+    LaunchedEffect(lv) { wait(k * 1000L); ph = 1 }
+    Status("Level $lv · $k words")
+    if (ph == 0) Text(seen.joinToString("\n"), fontSize = 24.sp, fontWeight = FontWeight.Medium) else {
+        opts.forEach { w -> Btn((if (Ended.on && w in seen) "✓ " else if (w in sel) "● " else "") + w) { if (!Ended.on) sel = if (w in sel) sel - w else sel + w } }
+        Btn("SUBMIT") { if (sel == seen.toSet()) { Sfx.good(); lv++ } else done(lv - 1.0) }
     }
 }
 
@@ -56,36 +60,39 @@ val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mi
             if ((k >= n && ps[k] == ps[k - n]) == tp) ok++; if ((k >= n && ls[k] == ls[k - n]) == tl) ok++ }
         done(ok * 50.0 / ps.size)
     }
-    Status("$n-back · letter: ${L[ls[i]]} · trial ${i + 1}/${ps.size}")
-    Grid(3, 3) { Cell(bg = if (ps[i] == it) Color.White else Color.Black) }
+    Status("$n-back · letter ${L[ls[i]]} · trial ${i + 1}/${ps.size}")
+    Grid(3, 3) { Cell(bg = if (ps[i] == it) (if (i % 2 == 0) Color.White else Color(0xFFFFB74D)) else Color.Black) }
     Row { Btn("POSITION MATCH") { tp = true }; Btn("LETTER MATCH") { tl = true } }
 }
 
 @Composable fun Corsi(d: Int, done: (Double) -> Unit) {
-    var seq by remember { mutableStateOf(listOf<Int>()) }; var lit by remember { mutableStateOf(-1) }
+    val pool = remember { bagList(16, 60) }
+    var n by remember { mutableStateOf(1) }; var lit by remember { mutableStateOf(-1) }
     var pos by remember { mutableStateOf(0) }; var show by remember { mutableStateOf(true) }
-    LaunchedEffect(seq.size) {
-        if (seq.isEmpty()) { seq = listOf((0..15).random()); return@LaunchedEffect }
+    val seq = pool.take(n)
+    LaunchedEffect(n) {
         show = true; pos = 0; wait(600)
-        for (i in seq) { lit = i; wait(750L - d * 200); lit = -1; wait(250) }
+        for (i in seq) { lit = i; wait(maxOf(220L, 750L - d * 200)); lit = -1; wait(250) }
         show = false
     }
-    Status(if (show) "Watch..." else "Repeat (${seq.size})")
+    Status(if (show) "Watch... · length $n" else "Repeat · length $n")
     Grid(4, 4) { i -> Cell(bg = if (lit == i) Color.White else Color.Black) {
-        if (!show) { if (i == seq[pos]) { pos++; if (pos == seq.size) seq = seq + ((0..15) - seq.toSet()).random() } else done(seq.size - 1.0) }
+        if (!show) { if (i == seq[pos]) { pos++; if (pos == seq.size) { Sfx.good(); n++ } } else done(n - 1.0) }
     } }
 }
 
 @Composable fun RevSpan(d: Int, done: (Double) -> Unit) {
-    var lvl by remember { mutableStateOf(2 + d) }; var s by remember { mutableStateOf("") }
+    var lv by remember { mutableStateOf(1) }; var s by remember { mutableStateOf("") }
     var ph by remember { mutableStateOf(0) }; var inp by remember { mutableStateOf("") }
-    LaunchedEffect(ph, lvl) { if (ph == 0) { s = rndStr("0123456789", lvl); wait(800L + lvl * 400L); ph = 1 } }
-    Status("Level ${lvl - 1 - d} · type it BACKWARDS")
-    if (ph == 0) BigText(s) else {
+    val len = spanLen(d, lv, intArrayOf(2, 3, 4, 6), intArrayOf(3, 5, 7, 10))
+    LaunchedEffect(ph, lv) { if (ph == 0) { s = rndStr("0123456789", len); wait(800L + len * 450L); ph = 1 } }
+    Status("Level $lv · $len digits · type it BACKWARDS")
+    if (ph == 0 || Ended.on) { if (Ended.on) Text("It was (backwards: ${s.reversed()})", color = Color.Gray); BigText(s) }
+    if (ph == 1) {
         TypedBox(inp)
-        Keypad("num") { k -> when (k) {
+        if (!Ended.on) Keypad("num") { k -> when (k) {
             "⌫" -> { inp = inp.dropLast(1) }
-            "✓" -> { if (inp == s.reversed()) { lvl++; inp = ""; ph = 0 } else done((lvl - 2 - d).toDouble()) }
+            "✓" -> { if (inp == s.reversed()) { Sfx.good(); lv++; inp = ""; ph = 0 } else done(lv - 1.0) }
             else -> { if (inp.length < s.length) inp += k }
         } }
     }
@@ -124,7 +131,7 @@ val DECKS: Map<String, List<Pair<String, String>>> = mapOf(
     }
     if (q.isNotEmpty()) {
         Status("$m · ${q.size} left · known first try: $fk")
-        Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF1E1E24)).border(1.dp, ac.copy(.6f), RoundedCornerShape(24.dp)).clickable { sh = true }, Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF1E1E24)).border(1.dp, ac.copy(.6f), RoundedCornerShape(24.dp)).clickable { Sfx.click(); sh = true }, Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(q[0].first, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                 if (sh) { Spacer(Modifier.height(14.dp)); Text(q[0].second, fontSize = 26.sp, color = ac) }
@@ -138,48 +145,61 @@ val DECKS: Map<String, List<Pair<String, String>>> = mapOf(
 
 // ---------- REACTION ----------
 @Composable fun ColorMatch(done: (Double) -> Unit) {
-    var a by remember { mutableStateOf(0) }; var b by remember { mutableStateOf(1) }; var n by remember { mutableStateOf(0) }; var ok by remember { mutableStateOf(0) }
-    fun ans(y: Boolean) { if ((a == b) == y) ok++; n++; if (n >= 20) done(ok.toDouble()) else { a = (0..3).random(); b = if ((0..1).random() == 0) a else ((0..3) - a).random() } }
-    Status("Does the WORD match its ink colour? ($n/20)")
+    val al = remember { bagList(4, 20) }; val mf = remember { List(20) { it % 2 == 0 }.shuffled() }
+    val bl = remember { al.mapIndexed { i, a -> if (mf[i]) a else ((0..3) - a).random() } }
+    var n by remember { mutableStateOf(0) }; var ok by remember { mutableStateOf(0) }; val t0 = remember { now() }
+    val a = al[minOf(n, 19)]; val b = bl[minOf(n, 19)]
+    fun ans(y: Boolean) { if ((a == b) == y) { ok++; Sfx.good() } else Sfx.bad(); n++; if (n >= 20) done(speedScore(ok, 20, t0)) }
+    Status("Correct $ok · ${minOf(n + 1, 20)}/20 · does the WORD match its ink?")
     Text(CL[a].first, color = CL[b].second, fontSize = 56.sp, fontWeight = FontWeight.Black)
     Spacer(Modifier.height(16.dp))
     Row { Btn("YES") { ans(true) }; Btn("NO") { ans(false) } }
 }
 
 @Composable fun Whack(d: Int, done: (Double) -> Unit) {
-    var m by remember { mutableStateOf(-1) }; var hit by remember { mutableStateOf(0) }; val step = 900L - d * 250
+    val order = remember { bagList(9, 80) }
+    var m by remember { mutableStateOf(-1) }; var hit by remember { mutableStateOf(0) }; var left by remember { mutableStateOf(30) }
+    val step = longArrayOf(1000, 800, 650, 450)[d]
     LaunchedEffect(Unit) {
-        var prev = -1
-        repeat((30000 / step).toInt()) { var x: Int; do { x = (0..8).random() } while (x == prev); prev = x; m = x; wait(step) }
+        val cnt = (30000 / step).toInt()
+        for (k in 0 until cnt) { m = order[k]; left = ((cnt - k) * step / 1000).toInt(); wait(step) }
         done(hit.toDouble())
     }
-    Status("30 seconds · Hits: $hit")
-    Grid(3, 3) { i -> Cell(bg = if (m == i) Color.White else Color.Black) { if (m == i) { hit++; m = -1 } } }
+    Status("Hits: $hit · ${left}s left")
+    Grid(3, 3) { i -> Box(Modifier.padding(7.dp)) { Cell(bg = if (m == i) Color.White else Color.Black) { if (m == i) { hit++; Sfx.good(); m = -1 } } } }
 }
 
-val OL = listOf("O" to "Q", "E" to "F", "M" to "N", "b" to "d", "p" to "q", "C" to "G", "I" to "l", "5" to "S", "8" to "B", "W" to "V")
+val OL = listOf("O" to "Q", "E" to "F", "M" to "N", "b" to "d", "p" to "q", "C" to "G", "5" to "S", "8" to "B", "W" to "V", "H" to "N", "U" to "V", "R" to "K", "T" to "Y", "2" to "Z", "0" to "D")
 val OS = listOf("▲" to "△", "●" to "○", "■" to "□", "◆" to "◇", "★" to "☆")
 val OD = listOf("↑" to "↗", "→" to "↘", "←" to "↖", "↓" to "↙")
+val ON = listOf("68" to "86", "19" to "91", "37" to "73", "25" to "52", "46" to "64", "58" to "85")
 
 @Composable fun Odd(d: Int, done: (Double) -> Unit) {
     val s = 4 + d; var r by remember { mutableStateOf(0) }; var pen by remember { mutableStateOf(0) }; val t0 = remember { now() }
-    val odd = remember(r) { (0 until s * s).random() }; val ty = remember(r) { (0..3).random() }
-    val pr = remember(r) { (when (ty) { 0 -> OL.random(); 2 -> OS.random(); else -> OD.random() }).let { if ((0..1).random() == 0) it else it.second to it.first } }
+    val types = remember { bagList(5, 12) }
+    val lp = remember { OL.shuffled() }; val sp = remember { OS.shuffled() }; val dp = remember { OD.shuffled() }; val np = remember { ON.shuffled() }
+    val ty = types[minOf(r, 11)]
+    val odd = remember(r) { (0 until s * s).random() }
+    val pr = remember(r) {
+        val p = when (ty) { 0 -> lp[r]; 1 -> OL[0]; 2 -> sp[r % sp.size]; 3 -> dp[r % dp.size]; else -> np[r % np.size] }
+        if ((0..1).random() == 0) p else p.second to p.first
+    }
     val hue = remember(r) { (0..359).random().toFloat() }; val dl = 0.25f - r * 0.015f
-    Status("Round ${r + 1}/12 · ${listOf("Similar letters", "Shade", "Shapes", "Direction")[ty]} · +2s per miss")
+    Status("Round ${minOf(r + 1, 12)}/12 · ${listOf("Similar letters", "Shade", "Shapes", "Direction", "Digits")[ty]} · +2s per miss")
     Grid(s, s) { i ->
         val o = i == odd
-        val tap = { if (o) { r++; if (r >= 12) done((now() - t0) / 1000.0 + pen) } else pen += 2 }
+        fun tap() { if (o) { Sfx.good(); r++; if (r >= 12) done((now() - t0) / 1000.0 + pen) } else { Sfx.bad(); pen += 2 } }
         if (ty == 1) Cell("", Color.hsv(hue, 0.6f, if (o) 0.85f - dl else 0.85f)) { tap() }
         else Cell(if (o) pr.second else pr.first) { tap() }
     }
 }
 
 @Composable fun Flanker(done: (Double) -> Unit) {
-    var c by remember { mutableStateOf((0..1).random()) }; var f by remember { mutableStateOf((0..1).random()) }
-    var n by remember { mutableStateOf(0) }; var ok by remember { mutableStateOf(0) }; val ch = listOf("<", ">")
-    fun ans(x: Int) { if (x == c) ok++; n++; if (n >= 20) done(ok * 5.0) else { c = (0..1).random(); f = (0..1).random() } }
-    Status("Direction of the MIDDLE arrow ($n/20)")
+    val cs = remember { bagList(2, 20) }; val fs = remember { List(20) { it % 2 }.shuffled() }
+    var n by remember { mutableStateOf(0) }; var ok by remember { mutableStateOf(0) }; val t0 = remember { now() }; val ch = listOf("<", ">")
+    val c = cs[minOf(n, 19)]; val f = if (fs[minOf(n, 19)] == 0) c else 1 - c
+    fun ans(x: Int) { if (x == c) { ok++; Sfx.good() } else Sfx.bad(); n++; if (n >= 20) done(speedScore(ok, 20, t0)) }
+    Status("Correct $ok · ${minOf(n + 1, 20)}/20 · middle arrow only")
     Text(ch[f].repeat(2) + ch[c] + ch[f].repeat(2), fontSize = 56.sp, fontWeight = FontWeight.Black, letterSpacing = 6.sp)
     Spacer(Modifier.height(16.dp))
     Row { Btn("◀  LEFT") { ans(0) }; Btn("RIGHT  ▶") { ans(1) } }
@@ -208,6 +228,7 @@ fun move(b: List<Int>, d: Int): Pair<List<Int>, Int> {
     var b by remember { mutableStateOf(spawn(spawn(List(16) { 0 }))) }; var sc by remember { mutableStateOf(0) }
     fun go(dir: Int) {
         val (nb, s) = move(b, dir); if (nb == b) return
+        if (s > 0) Sfx.good() else Sfx.tick()
         sc += s; val n2 = spawn(nb); b = n2
         if ((0..3).all { move(n2, it).first == n2 }) done(sc.toDouble())
     }
@@ -261,18 +282,17 @@ fun sOk(b: List<Int>) = (0..8).all { k -> listOf((0..8).map { b[k * 9 + it] }, (
 @Composable fun Mines(d: Int, done: (Double) -> Unit) {
     val N = 8; val M = listOf(8, 12, 16)[d]
     var mines by remember { mutableStateOf(setOf<Int>()) }; var op by remember { mutableStateOf(setOf<Int>()) }
-    var fl by remember { mutableStateOf(setOf<Int>()) }; var fm by remember { mutableStateOf(false) }
+    var fl by remember { mutableStateOf(setOf<Int>()) }
     fun nb(i: Int) = (-1..1).flatMap { dy -> (-1..1).map { dx -> dx to dy } }.filter { it != (0 to 0) }
         .map { (i % N + it.first) to (i / N + it.second) }.filter { it.first in 0 until N && it.second in 0 until N }.map { it.second * N + it.first }
-    Status("Mines: $M · Flags: ${fl.size}")
-    Btn(if (fm) "● FLAG MODE" else "FLAG MODE") { fm = !fm }
+    Status("TAP = dig · HOLD = flag · Mines $M · Flags ${fl.size}")
     Grid(N, N) { i ->
-        Cell(if (i in op) { val c = nb(i).count { it in mines }; if (c > 0) "$c" else "" } else if (i in fl) "⚑" else "", if (i in op) Color.DarkGray else Color.Black) {
-            if (fm) fl = if (i in fl) fl - i else fl + i
-            else if (i !in fl && i !in op) {
+        val label = if (i in op) { val c = nb(i).count { it in mines }; if (c > 0) "$c" else "" } else if (i in fl) "⚑" else if (Ended.on && i in mines) "✹" else ""
+        Cell(label, if (i in op) Color.DarkGray else Color.Black, onLong = { if (i !in op && !Ended.on) { fl = if (i in fl) fl - i else fl + i } }) {
+            if (i !in fl && i !in op) {
                 var mm = mines
                 if (mm.isEmpty()) { mm = ((0 until N * N) - (listOf(i) + nb(i)).toSet()).shuffled().take(M).toSet(); mines = mm }
-                if (i in mm) done(op.size * 100.0 / (N * N - M)) else {
+                if (i in mm) { done(op.size * 100.0 / (N * N - M)) } else {
                     val o = op.toMutableSet(); val q = ArrayDeque(listOf(i))
                     while (q.isNotEmpty()) { val x = q.removeFirst(); if (o.add(x) && nb(x).none { it in mm }) q.addAll(nb(x).filter { it !in o }) }
                     op = o; if (o.size == N * N - M) done(100.0)
