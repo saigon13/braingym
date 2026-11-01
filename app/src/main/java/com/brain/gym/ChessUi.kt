@@ -25,7 +25,8 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     val act = LocalContext.current as Activity
     val ac = LocalAccent.current
     val scope = rememberCoroutineScope()
-    val human = remember { when (m) { "Play White" -> true; "Play Black" -> false; else -> (0..1).random() == 0 } }
+    val two = m == "2 Players"
+    val human = remember { when (m) { "Play Black" -> false; "Random side" -> (0..1).random() == 0; else -> true } }
     val h = remember { mutableStateListOf(Snap(chInit(), -1 to -1, 0)) }
     var ix by remember { mutableStateOf(0) }
     var sel by remember { mutableStateOf(-1) }
@@ -39,6 +40,7 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     var popup by remember { mutableStateOf(false) }
     val cur = h[ix]; val pos = cur.p; val last = cur.last
     val moves = remember(pos) { chGen(pos) }
+    val myTurn = two || pos.w == human
 
     fun finish() { over = true; endT = (now() - t0) / 1000; popup = true }
 
@@ -51,10 +53,13 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
         h.add(Snap(np, f to t, ck)); ix = h.size - 1; sel = -1; hint = null
         val chk = chAtt(np.b, np.b.indexOf(if (np.w) 6 else -6), !np.w)
         if (chGen(np).isEmpty()) {
-            if (chk) { val win = (!np.w) == human; res = if (win) 100.0 * (d + 1) else 0.0; msg = if (win) "Checkmate! You win" else "Checkmate. You lose" }
-            else { res = 50.0 * (d + 1); msg = "Stalemate. Draw" }
+            if (chk) {
+                val whiteMoved = !np.w
+                if (two) { res = 1.0; msg = "Checkmate! ${if (whiteMoved) "White" else "Black"} wins" }
+                else { val win = whiteMoved == human; res = if (win) 100.0 * (d + 1) else 0.0; msg = if (win) "Checkmate! You win" else "Checkmate. You lose" }
+            } else { res = if (two) 1.0 else 50.0 * (d + 1); msg = "Stalemate. Draw" }
             finish()
-        } else if (ck >= 100 || np.b.count { it != 0 } == 2) { res = 50.0 * (d + 1); msg = "Draw"; finish() }
+        } else if (ck >= 100 || np.b.count { it != 0 } == 2) { res = if (two) 1.0 else 50.0 * (d + 1); msg = "Draw"; finish() }
         else msg = if (chk) "Check!" else ""
         if (!over) { if (abs(pos.b[t]) != 0) Sfx.tick() else Sfx.click() }
     }
@@ -64,7 +69,7 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     }
 
     LaunchedEffect(ix, h.size, over) {
-        if (!over && pos.w != human) {
+        if (!over && !two && pos.w != human) {
             think = true; delay(300)
             val mv = withContext(Dispatchers.Default) { chBest(pos, listOf(1, 2, 3, 4)[d], listOf(200, 30, 0, 0)[d]) }
             think = false; play(mv)
@@ -72,22 +77,22 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     }
 
     fun tap(q: Int) {
-        if (over || think || pos.w != human) return
+        if (over || think || !myTurn) return
         if (sel >= 0) { val mv = moves.firstOrNull { (it and 63) == sel && ((it shr 6) and 63) == q }; if (mv != null) { play(mv); return } }
         val v = pos.b[q]; sel = if (v != 0 && (v > 0) == pos.w) q else -1; hint = null
     }
     fun undo() {
         if (over || think) return
-        var t = ix - 1; while (t >= 0 && h[t].p.w != human) t--
+        var t = ix - 1; if (!two) { while (t >= 0 && h[t].p.w != human) t-- }
         if (t >= 0) { ix = t; sel = -1; hint = null; msg = "" }
     }
     fun redo() {
         if (over || think) return
-        var t = ix + 1; while (t < h.size && h[t].p.w != human) t++
+        var t = ix + 1; if (!two) { while (t < h.size && h[t].p.w != human) t++ }
         if (t < h.size) { ix = t; sel = -1; hint = null; msg = "" }
     }
     fun getHint() {
-        if (over || think || pos.w != human) return
+        if (over || think || !myTurn) return
         Ads.reward(act) {
             think = true
             scope.launch {
@@ -98,7 +103,8 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     }
 
     val cs = ((LocalConfiguration.current.screenWidthDp - 32) / 8).coerceIn(30, 50)
-    Status(if (over) msg else if (think) "Bot is thinking…" else if (pos.w == human) "Your move" + (if (msg.isNotEmpty()) " · $msg" else "") else "Bot to move")
+    Status(if (over) msg else if (think) "Thinking…" else if (two) "${if (pos.w) "White" else "Black"} to move" + (if (msg.isNotEmpty()) " · $msg" else "")
+        else if (pos.w == human) "Your move" + (if (msg.isNotEmpty()) " · $msg" else "") else "Bot to move")
     Grid(8, 8) { di ->
         val q = if (human) di else 63 - di
         val v = pos.b[q]
@@ -107,7 +113,7 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
         val hn = hint
         val bg = if (sel == q) Color(0xFF7E57C2) else if (hn != null && (hn.first == q || hn.second == q)) Color(0xFF2E7D32)
             else if (target && v != 0) Color(0xFF8E3B3B) else if (q == last.first || q == last.second) Color(0xFF4A3F6B) else base
-        Box(Modifier.size(cs.dp).background(bg).clickable { tap(q) }, Alignment.Center) {
+        Box(Modifier.size(cs.dp).background(bg).fast(null) { tap(q) }, Alignment.Center) {
             if (v != 0) Text(CH_SYM[abs(v)], color = if (v > 0) Color.White else Color(0xFFFFB74D), fontSize = (cs * 0.7).sp)
             else if (target) Text("●", color = ac, fontSize = 14.sp)
         }
@@ -121,8 +127,8 @@ class Snap(val p: ChPos, val last: Pair<Int, Int>, val clock: Int)
     if (popup) AlertDialog(
         onDismissRequest = { popup = false },
         title = { Text(msg, fontWeight = FontWeight.Bold) },
-        text = { Column { Text("Time played: ${fmt(endT)}"); Text("Score: ${"%.0f".format(res)} points") } },
-        confirmButton = { TextButton({ replay() }) { Text("Replay") } },
-        dismissButton = { TextButton({ popup = false; done(res) }) { Text("Finish") } }
+        text = { Column { Text("Time played: ${fmt(endT)}"); if (!two) Text("Score: ${"%.0f".format(res)} points") } },
+        confirmButton = { TextButton({ Sfx.tick(); replay() }) { Text("Replay") } },
+        dismissButton = { TextButton({ Sfx.tick(); popup = false; done(res) }) { Text("Finish") } }
     )
 }
