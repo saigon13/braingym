@@ -2,8 +2,9 @@ package com.brain.gym
 
 import android.app.Activity
 import android.content.Context
+import android.media.AudioFormat
 import android.media.AudioManager
-import android.media.ToneGenerator
+import android.media.AudioTrack
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -50,7 +51,7 @@ val GAMES = listOf(
     G("rev", "Reverse Span", true, listOf("Classic"), false, "levels"),
     G("flash", "Flash Cards", true, DECKS.keys.toList(), false, "% known"),
     G("react", "Reaction Time", false, listOf("Single", "Average of 5", "Race lights"), true, "ms"),
-    G("gonogo", "Go / No-Go", false, listOf("Classic"), false, "% correct"),
+    G("gonogo", "Go / No-Go", false, listOf("Classic"), false, "points"),
     G("stroop", "Stroop Test", false, listOf("Classic"), false, "points"),
     G("schulte", "Schulte Table", false, listOf("Classic"), true, "sec"),
     G("cmatch", "Color Match", false, listOf("Classic"), false, "points"),
@@ -63,9 +64,15 @@ val GAMES = listOf(
     G("mines", "Minesweeper", false, listOf("Classic"), false, "% cleared", true),
     G("chess", "Chess vs Bot", false, listOf("Play White", "Play Black", "Random side"), false, "points", true),
     G("flappy", "Flappy Bird", false, listOf("Classic"), false, "points", false, true),
-    G("snake", "Snake", false, listOf("Classic"), false, "points", false, true)
+    G("snake", "Snake", false, listOf("Classic", "Wrap", "Obstacles", "Fast"), false, "points", false, true),
+    G("stack", "Stack Tower", false, listOf("Classic"), false, "layers", false, true),
+    G("dodge", "Dodge", false, listOf("Classic"), false, "sec", false, true),
+    G("tiles", "Tap Tiles", false, listOf("Classic"), false, "taps", false, true)
 )
-val GODS = setOf("num", "words", "matrix", "seq", "chimp", "nback", "corsi", "gonogo", "whack", "rev", "dual")
+
+val ROSE = Color(0xFFFF6B8B)
+val PURP = Color(0xFF9C6BFF)
+val DC = listOf(Color(0xFF4CAF50), Color(0xFFFFC107), Color(0xFFFF9800), Color(0xFFFF5252))
 
 fun icon(id: String): ImageVector = when (id) {
     "num" -> Icons.Rounded.Dialpad; "seq" -> Icons.Rounded.GridView; "chimp" -> Icons.Rounded.Pets; "pairs" -> Icons.Rounded.Style
@@ -74,46 +81,51 @@ fun icon(id: String): ImageVector = when (id) {
     "react" -> Icons.Rounded.Bolt; "gonogo" -> Icons.Rounded.Traffic; "stroop" -> Icons.Rounded.Palette; "schulte" -> Icons.Rounded.Search
     "cmatch" -> Icons.Rounded.Brush; "whack" -> Icons.Rounded.Gavel; "odd" -> Icons.Rounded.Visibility; "flank" -> Icons.Rounded.SwapHoriz
     "g2048" -> Icons.Rounded.Calculate; "lights" -> Icons.Rounded.Lightbulb; "sudoku" -> Icons.Rounded.Tag; "mines" -> Icons.Rounded.Flag
-    "flappy" -> Icons.Rounded.Flight; "snake" -> Icons.Rounded.Timeline
+    "flappy" -> Icons.Rounded.Flight; "snake" -> Icons.Rounded.Timeline; "stack" -> Icons.Rounded.Layers
+    "dodge" -> Icons.Rounded.Security; "tiles" -> Icons.Rounded.MusicNote
     else -> Icons.Rounded.SportsEsports
 }
 
 val HOW = mapOf(
-    "num" to "A string of characters flashes on screen. Memorise it, then type it back with the on-screen keypad. Every 3 levels the string gets one character longer. Easy runs from 2 to 3 characters, Normal 3 to 5, Hard 5 to 7 and God 7 to 10. When you get one wrong, the right answer is shown. Tip: group characters into chunks of two or three.",
-    "seq" to "Tiles light up one after another. Repeat the same order by tapping the tiles. Each round adds one more tile. In Reverse mode you must tap them in the opposite order. Higher difficulty means faster flashes.",
-    "chimp" to "Numbers appear on the grid. Tap number 1: all the others turn into blank tiles. Now tap the rest in order from memory. Every success adds one more number. One mistake ends the run and shows where the numbers were.",
-    "pairs" to "Flip two cards at a time and find the matching pairs. Remember where each picture is. You can tap a new card straight away without waiting. Fewer moves is a better score. Easy has 6 pairs, Normal 8, Hard 10.",
-    "nback" to "Tiles light up one by one, and the colour alternates so you can see when a tile moved. Press MATCH when the lit tile is in the same place as N steps earlier (N is 1 to 4 depending on difficulty). Your score is the percentage of correct decisions.",
-    "matrix" to "A pattern flashes on the grid for a moment. Tap exactly those tiles. As you level up the grid gets bigger (up to 6 by 6) and more tiles appear. One wrong tap ends the game.",
-    "words" to "A list of words is shown for a few seconds. Then you see a mix of those words and new ones. Select exactly the words you saw. Every 3 levels the list gets longer. When you fail, the right words are marked.",
+    "num" to "A string of characters flashes on screen. Memorise it, then type it back with the on-screen keypad. Every 3 levels the string gets one character longer. Easy runs from 2 to 3 characters, Normal 3 to 5, Hard 5 to 7 and God 7 to 10. When you get one wrong, the correct answer is shown in purple and your answer in rose. Tip: group characters into chunks of two or three.",
+    "seq" to "Tiles light up one after another. Repeat the same order by tapping the tiles. Each round adds one more tile. In Reverse mode you must tap them in the opposite order. When you slip, the tile you tapped turns rose and the tile you should have tapped turns purple.",
+    "chimp" to "Numbers appear on the grid. Tap number 1: all the others turn into blank tiles. Now tap the rest in order from memory. Every success adds one more number. One mistake ends the run: the wrong tile turns rose and the numbers you had left are shown in purple.",
+    "pairs" to "Flip two cards at a time and find the matching pairs. Remember where each picture is. You can tap a new card straight away without waiting. Fewer moves is a better score. Easy has 6 pairs, Normal 8, Hard 10 and God 12.",
+    "nback" to "Tiles light up one at a time. For each tile ask yourself: is it in the SAME place it was N steps ago? If yes, press MATCH before the next tile. If not, do nothing. N is 1 on Easy, 2 on Normal, 3 on Hard and 4 on God. After each tile you see a tick or a cross. On Easy a dim purple square shows where the tile was N steps ago. The tile colour alternates so you can tell when it moved. Your score is the percentage of right decisions.",
+    "matrix" to "A pattern flashes on the grid for a moment. Tap exactly those tiles. As you level up the grid gets bigger (up to 6 by 6) and more tiles appear. One wrong tap ends the game: the wrong tile turns rose and the tiles you missed turn purple.",
+    "words" to "A list of words is shown for a few seconds. Then you see a mix of those words and new ones. Select exactly the words you saw. Every 3 levels the list gets longer. When you fail, missed words turn purple and wrong picks turn rose.",
     "dual" to "Two tasks at once: the tile position and a letter. Press POSITION MATCH if the tile is where it was N steps ago, and LETTER MATCH if the letter is the same as N steps ago. The tile colour alternates so you can tell when it moves.",
-    "corsi" to "Like Sequence Memory on a bigger 4 by 4 board. Watch the blocks light up, then repeat the order. It trains spatial working memory.",
-    "rev" to "Digits flash on screen. Then type them BACKWARDS using the keypad. 4-1-9 becomes 9-1-4. Every 3 levels you get one more digit.",
-    "flash" to "Pick a deck. A card shows a question: think of the answer, tap the card to flip it, then press Knew it or Again. Cards you miss come back until you know them. Your score is the percentage you knew on the first try. Difficulty sets 10, 20 or 30 cards.",
-    "react" to "Single: tap as soon as the box turns green. Average of 5: five rounds are averaged. Race lights: five red lights come on one by one, then they turn green one by one at the same speed. Tap when the fifth light turns green. Tapping early is a false start. Lower milliseconds is better.",
-    "gonogo" to "Tap the circle when it is GREEN and do nothing when it is RED. There are 20 rounds and your live score is shown at the top. On harder difficulties each light stays for less time.",
-    "stroop" to "A colour word is printed in a different ink colour. Tap the button that matches the INK colour, not the word. Example: the word BLUE written in red means you tap red. You earn points for correct answers and extra points for speed.",
-    "schulte" to "Find and tap the numbers in order, 1, 2, 3 and so on, as fast as you can. Keep your eyes near the centre and use your side vision. Lower time is better.",
-    "cmatch" to "A colour word is shown in some ink colour. Press YES if the meaning of the word matches the ink colour, NO if it does not. You earn points for correct answers and extra points for speed.",
+    "corsi" to "Like Sequence Memory on a bigger 4 by 4 board. Watch the blocks light up, then repeat the order. A mistake shows the wrong block in rose and the right one in purple.",
+    "rev" to "Digits flash on screen. Then type them BACKWARDS using the keypad. 4-1-9 becomes 9-1-4. Every 3 levels you get one more digit. When you fail you see the correct answer and your answer.",
+    "flash" to "Pick a deck. A card shows a question: think of the answer, tap the card to flip it, then press Knew it or Again. Cards you miss come back until you know them. Your score is the percentage you knew on the first try. Difficulty sets 10, 20, 30 or 40 cards.",
+    "react" to "Single: tap as soon as the box turns green. Average of 5: five rounds are averaged. Race lights: five red lights come on one by one at a steady beat. After the fifth red light, wait exactly one more beat and all lights turn green. Tap then. Tapping early is a false start. On God a yellow decoy flash can appear: do not tap it. Lower milliseconds is better.",
+    "gonogo" to "Tap the circle when it is GREEN and do nothing when it is RED. There are 20 rounds. You earn points for each right decision plus a speed bonus for fast taps on green. Each light stays for less time on harder difficulties. Your live score is shown at the top.",
+    "stroop" to "A colour word is printed in a different ink colour. Tap the button that matches the INK colour, not the word. Example: the word BLUE written in red means you tap red. You earn points for correct answers and extra points for speed. God has 6 colours and 30 rounds.",
+    "schulte" to "Find and tap the numbers in order, 1, 2, 3 and so on, as fast as you can. Keep your eyes near the centre and use your side vision. Lower time is better. The grid is 3 by 3 on Easy and 6 by 6 on God.",
+    "cmatch" to "A colour word is shown in some ink colour. Press YES if the meaning of the word matches the ink colour, NO if it does not. You earn points for correct answers and extra points for speed. God has 6 colours and 30 rounds.",
     "whack" to "Tiles light up for a moment. Tap each lit tile before it moves. The game lasts 30 seconds and the tiles move faster on harder difficulties.",
     "odd" to "Find the one tile that is different. The puzzle type changes every round: similar letters, a slightly different shade, filled versus outline shapes, arrows pointing a different way, and swapped digits. Each wrong tap adds 2 seconds. There are 12 rounds and a lower time is better.",
-    "flank" to "Look only at the MIDDLE arrow and press the direction it points. The arrows around it may point the opposite way to distract you. Correct answers and speed both add points.",
-    "g2048" to "Swipe in any direction to slide all the tiles. Equal numbers merge into their sum. Build big numbers and avoid filling the board.",
+    "flank" to "Look only at the MIDDLE arrow and press the direction it points. The arrows around it may point the opposite way to distract you. Correct answers and speed both add points. On God the side arrows always point the wrong way.",
+    "g2048" to "Swipe in any direction to slide all the tiles. Equal numbers merge into their sum. Build big numbers and avoid filling the board. Harder difficulties spawn more 4s.",
     "lights" to "Tapping a tile flips it and its four neighbours. Turn every light off in as few moves as you can.",
     "sudoku" to "Fill the 9 by 9 grid so every row, column and 3 by 3 box contains the numbers 1 to 9. Tap an empty tile, then a number. Dark grey tiles are fixed. Lower time is better.",
-    "mines" to "TAP a tile to dig it. LONG-PRESS (hold) a tile to place or remove a flag. Each number shows how many mines touch that tile. Clear every safe tile to win. Your first tap is always safe.",
-    "chess" to "You play against a bot. Tap a piece, then a highlighted square to move it. Undo and Redo take moves back and forward. Hint shows a strong move after a short ad. A win scores 100 times (difficulty + 1), a draw scores half.",
+    "mines" to "TAP a tile to dig it. LONG-PRESS (hold) a tile to place or remove a flag. Each number shows how many mines touch that tile. Clear every safe tile to win. Your first tap is always safe. When you hit a mine, all mines are shown.",
+    "chess" to "You play against a bot. Tap a piece, then a highlighted square to move it. Undo and Redo take moves back and forward. Hint shows a strong move after a short ad. A win scores 100 times (difficulty + 1), a draw scores half. On God the bot looks four moves ahead and may take a few seconds to move.",
     "flappy" to "Tap to flap and fly through the gaps between the pipes. Each pipe you pass is one point. Touching a pipe or the edge ends the game. The first tap starts the game.",
-    "snake" to "Swipe to steer the snake. Eat the food to grow and score. Hitting the wall or your own tail ends the game. The snake speeds up as it grows."
+    "snake" to "Swipe to steer the snake. Eat the food to grow and score. Classic: walls and your own tail are deadly. Wrap: you come out the other side of the wall. Obstacles: grey blocks are deadly. Fast: the snake moves much faster. The snake speeds up as it grows.",
+    "stack" to "A block slides left and right. Tap to drop it on the tower. Only the part that overlaps the block below stays, so the tower gets narrower if you are off. Land it perfectly to keep the full width. The game ends when you miss completely.",
+    "dodge" to "Drag your finger left and right to move the player at the bottom. Dodge the falling blocks. Your score is how many seconds you survive. Blocks come faster the longer you last.",
+    "tiles" to "Tap the lit tile in the bottom row. Each correct tap brings the next row down and refills the time bar a little. The time bar keeps draining, faster as your score grows. A wrong tap or an empty bar ends the game."
 )
 
 // ---------- State holders ----------
 object Live { var txt by mutableStateOf("") }
-object Pause { var on by mutableStateOf(false) }
+object Pause { var on by mutableStateOf(false); var lost = 0L }
 object Ended { var on by mutableStateOf(false) }
 val LocalAccent = compositionLocalOf { Color(0xFF4DD0E1) }
 val LocalCell = compositionLocalOf { 56 }
-fun now() = System.currentTimeMillis()
+// Game clock: real time minus the time the game spent paused
+fun now() = System.currentTimeMillis() - Pause.lost
 suspend fun wait(ms: Long) { var left = ms; while (left > 0) { delay(50); if (!Pause.on) left -= 50 } }
 
 fun spanLen(d: Int, lv: Int, s: IntArray, m: IntArray) = minOf(m[d], s[d] + (lv - 1) / 3)
@@ -142,18 +154,35 @@ class Store(c: Context) {
     fun setBool(k: String, v: Boolean) { p.edit().putBoolean(k, v).apply() }
 }
 
-// ---------- Sound and vibration ----------
+// ---------- Soft synthesized sounds + vibration ----------
 object Sfx {
     var sound by mutableStateOf(true)
     var vib by mutableStateOf(true)
-    var base = 1
-    private val tg: ToneGenerator? = try { ToneGenerator(AudioManager.STREAM_MUSIC, 70) } catch (e: Exception) { null }
-    private fun t(tone: Int, ms: Int) { if (sound) try { tg?.startTone(tone, ms) } catch (e: Exception) { } }
-    fun click() = t(ToneGenerator.TONE_DTMF_0 + base, 45)
-    fun tick() = t(ToneGenerator.TONE_PROP_BEEP, 60)
-    fun good() = t(ToneGenerator.TONE_PROP_ACK, 160)
-    fun bad() = t(ToneGenerator.TONE_PROP_NACK, 350)
-    fun win() = t(ToneGenerator.TONE_PROP_PROMPT, 400)
+    var base = 0
+    private var ctr = 0
+    private const val RATE = 22050
+    private fun mk(freqs: List<Double>, ms: Int, vol: Double): AudioTrack? = try {
+        val n = RATE * ms / 1000; val seg = n / freqs.size; val buf = ShortArray(n)
+        for (i in 0 until n) {
+            val j = i % seg; val f = freqs[minOf(i / seg, freqs.size - 1)]
+            val env = minOf(1.0, j / (RATE * 0.006)) * Math.exp(-5.0 * j / seg)
+            buf[i] = (Math.sin(2 * Math.PI * f * i / RATE) * env * vol * 32767).toInt().toShort()
+        }
+        val t = AudioTrack(AudioManager.STREAM_MUSIC, RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT, n * 2, AudioTrack.MODE_STATIC)
+        t.write(buf, 0, n); t
+    } catch (e: Exception) { null }
+    private val pent = listOf(523.25, 587.33, 659.25, 783.99, 880.0)
+    private val clicks by lazy { pent.map { mk(listOf(it), 70, .16) } }
+    private val tk by lazy { mk(listOf(740.0), 35, .10) }
+    private val gd by lazy { mk(listOf(659.25, 880.0), 190, .18) }
+    private val bd by lazy { mk(listOf(220.0, 174.6), 260, .18) }
+    private val wn by lazy { mk(listOf(523.25, 659.25, 783.99, 1046.5), 520, .18) }
+    private fun p(t: AudioTrack?) { if (!sound || t == null) return; try { t.stop(); t.reloadStaticData(); t.play() } catch (e: Exception) { } }
+    fun click() { ctr++; p(clicks[(base + ctr) % 5]) }
+    fun tick() = p(tk)
+    fun good() = p(gd)
+    fun bad() = p(bd)
+    fun win() = p(wn)
     fun buzz(c: Context) {
         if (!vib) return
         try {
@@ -163,25 +192,37 @@ object Sfx {
     }
 }
 
-// ---------- Ads (test IDs: replace before release) ----------
+// ---------- Ads: change these switches to control ads ----------
+object AdCfg {
+    const val ENABLED = true            // master switch: false = no ads at all
+    const val BANNER = true             // small banner at the bottom
+    const val INTERSTITIAL_EVERY = 3    // full-screen ad after every Nth finished game (0 = never)
+    const val REWARDED_HINTS = true     // chess hint needs a rewarded ad
+    // TEST ids from Google. Replace with your own ad unit ids before release
+    const val BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
+    const val INTER_ID = "ca-app-pub-3940256099942544/1033173712"
+    const val REWARD_ID = "ca-app-pub-3940256099942544/5224354917"
+}
+
 object Ads {
     private var inter: InterstitialAd? = null
     private var rew: RewardedAd? = null
     private var n = 0
     fun load(c: Context) {
-        InterstitialAd.load(c, "ca-app-pub-3940256099942544/1033173712", AdRequest.Builder().build(), object : InterstitialAdLoadCallback() {
+        if (!AdCfg.ENABLED) return
+        InterstitialAd.load(c, AdCfg.INTER_ID, AdRequest.Builder().build(), object : InterstitialAdLoadCallback() {
             override fun onAdLoaded(a: InterstitialAd) { inter = a }
             override fun onAdFailedToLoad(e: LoadAdError) { inter = null }
         })
-        RewardedAd.load(c, "ca-app-pub-3940256099942544/5224354917", AdRequest.Builder().build(), object : RewardedAdLoadCallback() {
+        RewardedAd.load(c, AdCfg.REWARD_ID, AdRequest.Builder().build(), object : RewardedAdLoadCallback() {
             override fun onAdLoaded(a: RewardedAd) { rew = a }
             override fun onAdFailedToLoad(e: LoadAdError) { rew = null }
         })
     }
-    // Shown at most every 3rd finished game, only when leaving the game-over panel
+    // Shown only when the player leaves the game-over panel, never during play
     fun maybe(act: Activity, next: () -> Unit) {
         n++; val a = inter
-        if (n % 3 != 0 || a == null) { next(); return }
+        if (!AdCfg.ENABLED || AdCfg.INTERSTITIAL_EVERY <= 0 || n % AdCfg.INTERSTITIAL_EVERY != 0 || a == null) { next(); return }
         a.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() { inter = null; load(act); next() }
             override fun onAdFailedToShowFullScreenContent(e: AdError) { inter = null; next() }
@@ -191,7 +232,7 @@ object Ads {
     // Rewarded: used for chess hints. If no ad is ready the reward is given for free.
     fun reward(act: Activity, ok: () -> Unit) {
         val r = rew
-        if (r == null) { ok(); load(act); return }
+        if (!AdCfg.ENABLED || !AdCfg.REWARDED_HINTS || r == null) { ok(); load(act); return }
         r.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() { rew = null; load(act) }
             override fun onAdFailedToShowFullScreenContent(e: AdError) { rew = null; ok() }
@@ -201,17 +242,28 @@ object Ads {
 }
 
 // ---------- UI helpers ----------
-@Composable fun Banner() = AndroidView(
-    factory = { c -> AdView(c).apply { setAdSize(AdSize.BANNER); adUnitId = "ca-app-pub-3940256099942544/6300978111"; loadAd(AdRequest.Builder().build()) } },
-    modifier = Modifier.fillMaxWidth().height(50.dp))
+@Composable fun Banner() {
+    if (AdCfg.ENABLED && AdCfg.BANNER) AndroidView(
+        factory = { c -> AdView(c).apply { setAdSize(AdSize.BANNER); adUnitId = AdCfg.BANNER_ID; loadAd(AdRequest.Builder().build()) } },
+        modifier = Modifier.fillMaxWidth().height(50.dp))
+}
 
+// Filled action button (Submit, Match, Retry ...)
 @Composable fun Btn(t: String, f: () -> Unit) =
-    OutlinedButton({ Sfx.tick(); f() }, Modifier.padding(4.dp), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, LocalAccent.current.copy(.6f))) { Text(t) }
+    Button({ Sfx.tick(); f() }, Modifier.padding(4.dp), shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = LocalAccent.current, contentColor = Color.Black)) { Text(t, fontWeight = FontWeight.Bold) }
+
+// Outlined option button (answers and choices that are part of the game)
+@Composable fun Opt(t: String, c: Color = Color.Unspecified, f: () -> Unit) {
+    val col = if (c == Color.Unspecified) LocalAccent.current else c
+    OutlinedButton({ Sfx.tick(); f() }, Modifier.padding(4.dp), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, col.copy(.7f)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (c == Color.Unspecified) Color.White else c)) { Text(t) }
+}
 
 // The status text is shown big at the top of the game screen by the main UI
 @Composable fun Status(t: String) { SideEffect { Live.txt = t } }
 
-@Composable fun BigText(s: String) = Text(s, fontSize = 44.sp, letterSpacing = 6.sp, fontWeight = FontWeight.Bold, color = LocalAccent.current)
+@Composable fun BigText(s: String, c: Color = LocalAccent.current) = Text(s, fontSize = 44.sp, letterSpacing = 6.sp, fontWeight = FontWeight.Bold, color = c)
 
 @Composable fun TypedBox(s: String) {
     val ac = LocalAccent.current
