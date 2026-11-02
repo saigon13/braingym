@@ -68,8 +68,6 @@ val GAMES = listOf(
     G("stack", "Stack Tower", false, CLS, false, "layers", false, true),
     G("dodge", "Dodge", false, CLS, false, "sec", false, true),
     G("tiles", "Tap Tiles", false, CLS, false, "taps", false, true),
-    G("emoji", "Emoji Spot", false, CLS, true, "sec", false, true),
-    G("riddle", "Emoji Riddle", false, CLS, false, "correct", false, true),
     G("balloon", "Balloon Pop", false, CLS, false, "pops", false, true),
     G("keys", "Mechanical Keys", false, CLS, false, "", false, false, true),
     G("popit", "Pop-It", false, CLS, false, "", false, false, true),
@@ -96,8 +94,7 @@ fun icon(id: String): ImageVector = when (id) {
     "g2048" -> Icons.Rounded.Calculate; "lights" -> Icons.Rounded.Lightbulb; "sudoku" -> Icons.Rounded.Tag; "mines" -> Icons.Rounded.Flag
     "ttt" -> Icons.Rounded.Close; "c4" -> Icons.Rounded.Adjust
     "flappy" -> Icons.Rounded.Flight; "snake" -> Icons.Rounded.Timeline; "stack" -> Icons.Rounded.Layers
-    "dodge" -> Icons.Rounded.Security; "tiles" -> Icons.Rounded.MusicNote; "emoji" -> Icons.Rounded.EmojiEmotions
-    "riddle" -> Icons.Rounded.Psychology; "balloon" -> Icons.Rounded.Star
+    "dodge" -> Icons.Rounded.Security; "tiles" -> Icons.Rounded.MusicNote; "balloon" -> Icons.Rounded.Star
     "keys" -> Icons.Rounded.Keyboard; "popit" -> Icons.Rounded.BubbleChart; "wrap" -> Icons.Rounded.Apps; "switches" -> Icons.Rounded.ToggleOn
     "pen" -> Icons.Rounded.Edit; "zip" -> Icons.Rounded.UnfoldMore; "spinner" -> Icons.Rounded.Autorenew; "slime" -> Icons.Rounded.Eco
     "knob" -> Icons.Rounded.RadioButtonChecked; "buttons" -> Icons.Rounded.TouchApp
@@ -136,16 +133,14 @@ val HOW = mapOf(
     "stack" to "A block slides left and right. Tap anywhere to drop it. Only the overlapping part stays. A perfect drop keeps the width. The game ends when you miss completely.",
     "dodge" to "Drag your finger to move the player and dodge falling blocks. Score is seconds survived.",
     "tiles" to "Tap the lit tile in the bottom row. Each correct tap refills the time bar a little. A wrong tap or an empty bar ends the game.",
-    "emoji" to "Find the one emoji that looks slightly different. 10 rounds. Each wrong tap adds 2 seconds. Lower time is better.",
-    "riddle" to "Guess the movie from the emojis. Pick one answer. 10 questions, one point each. Harder difficulties give more answer choices.",
     "balloon" to "Tap balloons to pop them before they float away. Three lives. Balloons get faster over time.",
-    "keys" to "Eight big mechanical keys. Tap them in any rhythm. Switch between Clicky and Thocky key sounds.",
+    "keys" to "Eight big mechanical keys. Tap them in any rhythm. Every key makes a press sound and a release sound. Switch between Clicky and Thocky key sounds.",
     "popit" to "A silicone pop-it. Tap or slide your finger over the bubbles to push them in and out.",
     "wrap" to "Tap or slide your finger over the bubble wrap to pop it. It refills when everything is popped.",
-    "switches" to "Flip the toggle switches. Each one clacks a little differently.",
-    "pen" to "Click the pen. Each click pushes the tip out or pulls it in, with the double click of a real pen.",
-    "zip" to "Drag the zipper slider up and down. Every step makes a zip sound.",
-    "spinner" to "Tap or flick to spin the fidget spinner. Keep going to spin faster and hear the bearing.",
+    "switches" to "Flip the toggle switches. On and off clack differently.",
+    "pen" to "Click the pen. One click pushes the tip out, the next pulls it back in.",
+    "zip" to "Drag the zipper slider up and down. Every tooth makes a tiny ratchet click, so faster pulls sound faster.",
+    "spinner" to "Tap to kick the spinner or flick around it to spin it faster. The bearing whir follows its speed.",
     "slime" to "Poke, squish and drag the slime.",
     "knob" to "Turn the knob with your finger. Every notch clicks.",
     "buttons" to "Six squishy stress buttons, each with its own sound."
@@ -230,7 +225,7 @@ fun Modifier.hub(): Modifier = pointerInput(Unit) {
 object AdCfg {
     const val ENABLED = true            // master switch: false = no ads at all
     const val BANNER = true             // small banner at the bottom
-    const val INTERSTITIAL_EVERY = 3    // full-screen ad after every Nth finished game (0 = never)
+    const val INTERSTITIAL_EVERY = 3    // used when the player has not allowed activity data (0 = never)
     const val REWARDED_HINTS = true     // chess hint needs a rewarded ad
     // TEST ids from Google. Replace with your own ad unit ids before release
     const val BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
@@ -241,7 +236,6 @@ object AdCfg {
 object Ads {
     private var inter: InterstitialAd? = null
     private var rew: RewardedAd? = null
-    private var n = 0
     fun load(c: Context) {
         if (!AdCfg.ENABLED) return
         InterstitialAd.load(c, AdCfg.INTER_ID, AdRequest.Builder().build(), object : InterstitialAdLoadCallback() {
@@ -253,10 +247,11 @@ object Ads {
             override fun onAdFailedToLoad(e: LoadAdError) { rew = null }
         })
     }
-    // Shown only when the player leaves the game-over panel, never during play
-    fun maybe(act: Activity, next: () -> Unit) {
-        n++; val a = inter
-        if (!AdCfg.ENABLED || AdCfg.INTERSTITIAL_EVERY <= 0 || n % AdCfg.INTERSTITIAL_EVERY != 0 || a == null) { next(); return }
+    // Full-screen ad, only used when the player leaves the game-over panel. AdBrain (Insights.kt) decides WHEN.
+    fun show(act: Activity, onShown: () -> Unit, next: () -> Unit) {
+        val a = inter
+        if (!AdCfg.ENABLED || a == null) { next(); return }
+        onShown()
         a.fullScreenContentCallback = object : FullScreenContentCallback() {
             override fun onAdDismissedFullScreenContent() { inter = null; load(act); next() }
             override fun onAdFailedToShowFullScreenContent(e: AdError) { inter = null; next() }
@@ -271,7 +266,7 @@ object Ads {
             override fun onAdDismissedFullScreenContent() { rew = null; load(act) }
             override fun onAdFailedToShowFullScreenContent(e: AdError) { rew = null; ok() }
         }
-        r.show(act) { ok() }
+        r.show(act) { AdBrain.ins?.rewardUsed(); ok() }
     }
 }
 
