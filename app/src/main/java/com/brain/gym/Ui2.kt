@@ -2,6 +2,9 @@ package com.brain.gym
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)}m" else "${s / 60}:${"%02d".format(s % 60)}"
 
@@ -65,7 +69,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
         "sudoku" -> Sudoku(d, f); "mines" -> Mines2(d, f); "chess" -> ChessBoard(m, d, f)
         "ttt" -> TicTacToe(m, d, f); "c4" -> ConnectFour(m, d, f)
         "flappy" -> FlappyBall(d, f); "snake" -> Snake(m, d, f); "stack" -> StackTower2(d, f); "dodge" -> Dodge(d, f); "tiles" -> TapTiles(d, f)
-        "emoji" -> EmojiSpot(d, f); "riddle" -> EmojiRiddle(d, f); "balloon" -> BalloonPop(d, f)
+        "balloon" -> BalloonPop(d, f)
         else -> Asmr(c.id)
     }
 }
@@ -86,14 +90,22 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     var play by remember { mutableStateOf(0L) }
     var total by remember { mutableStateOf(st.totalSec()) }
     var fg by remember { mutableStateOf(true) }
+    var home2 by remember { mutableStateOf(false) }
+    var showData by remember { mutableStateOf(false) }
     val act = LocalContext.current as Activity
     val lo = LocalLifecycleOwner.current
-    LaunchedEffect(Unit) { Sfx.sound = st.bool("snd", true); Sfx.vib = st.bool("vib", true) }
+    val scope = rememberCoroutineScope()
+    val ins = remember { Insights(act) }
+    var asked by remember { mutableStateOf(ins.asked) }
+    val prog = remember { Animatable(0f) }
+    val scr = rememberScrollState()
+
+    LaunchedEffect(Unit) { AdBrain.ins = ins; Snd.warm(act); Sfx.sound = st.bool("snd", true); Sfx.vib = st.bool("vib", true) }
     LaunchedEffect(Unit) { while (true) { delay(50); if (Pause.on) Pause.lost += 50 } }
     DisposableEffect(lo) {
         val ob = LifecycleEventObserver { _, e ->
-            if (e == Lifecycle.Event.ON_RESUME) fg = true
-            if (e == Lifecycle.Event.ON_PAUSE) { fg = false; st.setTotal(total) }
+            if (e == Lifecycle.Event.ON_RESUME) { fg = true; ins.foreground() }
+            if (e == Lifecycle.Event.ON_PAUSE) { fg = false; st.setTotal(total); ins.background() }
         }
         lo.lifecycle.addObserver(ob)
         onDispose { lo.lifecycle.removeObserver(ob) }
@@ -102,7 +114,10 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
         var n = 0
         while (true) {
             delay(1000)
-            if (fg) { total++; if (step == 2 && !paused && !info && !ended) play++; n++; if (n % 10 == 0) st.setTotal(total) }
+            if (fg) {
+                total++; if (step == 2 && !paused && !info && !ended) play++; n++; if (n % 10 == 0) st.setTotal(total)
+                ins.tick(if (step == 2 && !paused && !info && !ended) g?.id else null)
+            }
         }
     }
     SideEffect { Pause.on = paused || info; Ended.on = ended }
@@ -117,44 +132,59 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
         if (step == 2 && !asm) { if (ended) { ended = false; step = 1 } else paused = true }
         else if (step == 2 || step == 1) step = 0 else step = 1
     }
+    fun adThen(next: () -> Unit) { if (AdBrain.allow(play)) Ads.show(act, { AdBrain.shown() }, next) else next() }
+    fun toggleHome() {
+        home2 = !home2; Snd.play("split")
+        scope.launch { prog.animateTo(if (home2) 1f else 0f, tween(850, easing = FastOutSlowInEasing)) }
+    }
+    BackHandler(home2 && step == 0) { Sfx.tick(); toggleHome() }
     BackHandler(step != 0) { Sfx.tick(); back() }
+
+    val homeFront: @Composable () -> Unit = {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { toggleHome() }) {
+                    Text("BRAIN GYM", fontSize = 26.sp, fontWeight = FontWeight.Black)
+                    Text("Memory · reflexes · logic · fun · asmr", color = Color.Gray, fontSize = 12.sp)
+                }
+                IconButton({ Sfx.sound = !Sfx.sound; st.setBool("snd", Sfx.sound); Sfx.tick() }) { Icon(if (Sfx.sound) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff, null, tint = if (Sfx.sound) ac else Color.Gray) }
+                IconButton({ Sfx.vib = !Sfx.vib; st.setBool("vib", Sfx.vib); Sfx.tick(); Sfx.buzz(act) }) { Icon(Icons.Rounded.Vibration, null, tint = if (Sfx.vib) ac else Color.Gray) }
+                Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF1C1C20)).padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Timer, null, tint = ac, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                    Column { Text(fmt(total), fontSize = 14.sp, fontWeight = FontWeight.Bold); Text("total played", fontSize = 9.sp, color = Color.Gray) }
+                }
+            }
+            Sp(14)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf("Brain", "Reaction", "Logic", "Fun", "ASMR").forEachIndexed { i, t -> Chip(t, tab == i, AC[i], Modifier.weight(1f), true) { tab = i; ins.tab(i) } }
+            }
+            Sp(14)
+            val list = GAMES.filter { if (tab == 4) it.asmr else if (tab == 3) it.fn else if (tab == 2) it.logic else !it.logic && !it.fn && !it.asmr && it.mem == (tab == 0) }
+            val tw = (LocalConfiguration.current.screenWidthDp - 32 - 20) / 3
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+                list.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
+                        row.forEach { x ->
+                            Tile(x, AC[tab], st, Modifier.width(tw.dp)) {
+                                g = x; mode = x.modes[0]; Live.txt = ""
+                                if (x.asmr) { ended = false; run++; ins.gameStarted(x.id, 0); step = 2 } else step = 1
+                            }
+                        }
+                    }
+                    Sp(10)
+                }
+            }
+        }
+    }
 
     CompositionLocalProvider(LocalAccent provides ac) {
         Column(Modifier.fillMaxSize().background(Brush.verticalGradient(if (god) listOf(Color(0xFF2A0E0E), Color.Black) else listOf(Color(0xFF0E0E10), Color.Black))).padding(16.dp)) {
             if (c == null || step == 0) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("BRAIN GYM", fontSize = 26.sp, fontWeight = FontWeight.Black)
-                        Text("Memory · reflexes · logic · fun · asmr", color = Color.Gray, fontSize = 12.sp)
-                    }
-                    IconButton({ Sfx.sound = !Sfx.sound; st.setBool("snd", Sfx.sound); Sfx.tick() }) { Icon(if (Sfx.sound) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff, null, tint = if (Sfx.sound) ac else Color.Gray) }
-                    IconButton({ Sfx.vib = !Sfx.vib; st.setBool("vib", Sfx.vib); Sfx.tick(); Sfx.buzz(act) }) { Icon(Icons.Rounded.Vibration, null, tint = if (Sfx.vib) ac else Color.Gray) }
-                    Row(Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF1C1C20)).padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Timer, null, tint = ac, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                        Column { Text(fmt(total), fontSize = 14.sp, fontWeight = FontWeight.Bold); Text("total played", fontSize = 9.sp, color = Color.Gray) }
-                    }
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    if (home2 && prog.value >= 1f) NewHome(ins, ac, { toggleHome() }, { showData = true })
+                    else if (prog.value > 0f) SplitReveal(prog.value, homeFront) { NewHome(ins, ac, { toggleHome() }, { showData = true }) }
+                    else homeFront()
                 }
-                Sp(14)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf("Brain", "Reaction", "Logic", "Fun", "ASMR").forEachIndexed { i, t -> Chip(t, tab == i, AC[i], Modifier.weight(1f), true) { tab = i } }
-                }
-                Sp(14)
-                val list = GAMES.filter { if (tab == 4) it.asmr else if (tab == 3) it.fn else if (tab == 2) it.logic else !it.logic && !it.fn && !it.asmr && it.mem == (tab == 0) }
-                val tw = (LocalConfiguration.current.screenWidthDp - 32 - 20) / 3
-                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-                    list.chunked(3).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
-                            row.forEach { x ->
-                                Tile(x, AC[tab], st, Modifier.width(tw.dp)) {
-                                    g = x; mode = x.modes[0]; Live.txt = ""
-                                    if (x.asmr) { ended = false; run++; step = 2 } else step = 1
-                                }
-                            }
-                        }
-                        Sp(10)
-                    }
-                }
-                Sp(8)
             } else {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     IconButton({ Sfx.tick(); back() }) {
@@ -168,7 +198,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                 }
                 if (step == 2 && !asm) Text(Live.txt, fontSize = 18.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
                 Box(Modifier.weight(1f).fillMaxWidth().then(if (step == 2 && !asm) Modifier.hub() else Modifier), contentAlignment = Alignment.Center) {
-                    Column(Modifier.verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.then(if (asm) Modifier else Modifier.verticalScroll(scr)), horizontalAlignment = Alignment.CenterHorizontally) {
                         when (step) {
                             1 -> {
                                 Box(Modifier.size(78.dp).clip(CircleShape).background(ac.copy(.16f)), Alignment.Center) { Icon(icon(c.id), null, tint = ac, modifier = Modifier.size(44.dp)) }
@@ -181,7 +211,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     listOf("Easy", "Normal", "Hard", "God").forEachIndexed { i, n -> Chip(n, i == diff, DC[i]) { diff = i } }
                                 }
-                                Sp(26); Big("START", ac) { ended = false; play = 0; Live.txt = ""; run++; Sfx.base = (c.id.hashCode() and 0x7fffffff) % 5; step = 2 }
+                                Sp(26); Big("START", ac) { ended = false; play = 0; Live.txt = ""; run++; Sfx.base = (c.id.hashCode() and 0x7fffffff) % 5; ins.gameStarted(c.id, diff); step = 2 }
                                 Sp(8); Chip("Scores and history", false, ac) { step = 4 }
                             }
                             2 -> {
@@ -191,6 +221,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                                             val h = st.hist(c.id).map { it[3].toDouble() }
                                             rec = h.isEmpty() || (if (c.lower) s < h.min() else s > h.max())
                                             st.add(c.id, mode, diff, s); score = s; ended = true
+                                            ins.gameFinished(c.id, s, rec)
                                             if (rec) Sfx.win() else Sfx.bad()
                                             Sfx.buzz(act)
                                         }
@@ -207,8 +238,8 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
                                     Text(if (rec) "New best!" else "Game over", color = ac, fontSize = 22.sp, fontWeight = FontWeight.Bold)
                                     Text("%.1f".format(score), fontSize = 52.sp, fontWeight = FontWeight.Black)
                                     Text("${c.unit} · time ${fmt(play)}", color = Color.Gray)
-                                    Sp(14); Big("RETRY", ac) { Ads.maybe(act) { ended = false; play = 0; Live.txt = ""; run++ } }
-                                    Sp(8); Chip("Menu", true, ac) { Ads.maybe(act) { ended = false; step = 1 } }
+                                    Sp(14); Big("RETRY", ac) { adThen { ended = false; play = 0; Live.txt = ""; run++; ins.gameStarted(c.id, diff) } }
+                                    Sp(8); Chip("Menu", true, ac) { adThen { ended = false; step = 1 } }
                                 }
                             }
                             3 -> { }
@@ -225,6 +256,8 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
             }
             Banner()
         }
+        if (!asked) ConsentDialog({ ins.consent(true); ins.foreground(); asked = true }, { ins.consent(false); asked = true })
+        if (showData) DataDialog(ins) { showData = false }
         if (info && c != null) InfoDialog(c) { info = false }
         if (paused && c != null) AlertDialog(
             onDismissRequest = { paused = false },
