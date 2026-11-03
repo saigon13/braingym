@@ -150,7 +150,7 @@ class Insights(c: Context) {
         val dm = diffs.indices.maxByOrNull { diffs[it] }
         L += "Favourite difficulty: " + (if (dm == null || diffs[dm] == 0) "—" else listOf("Easy", "Normal", "Hard", "God")[dm])
         games.entries.sortedByDescending { it.value[1] }.take(5).forEach { (k, v) -> L += "  ${nm(k)}: ${v[0]} plays · ${fmt(v[1])} · ${v[3]} new bests" }
-        L += "Ads: $interTotal full-screen ($adsToday today) · $rewards rewarded · pacing tier: ${AdBrain.tier()}"
+        L += "Ads: $interTotal full-screen (${adsToday()} today) · $rewards rewarded · pacing tier: ${AdBrain.tier()}"
         return L
     }
 }
