@@ -3,7 +3,7 @@ package com.brain.gym
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -16,11 +16,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -99,6 +101,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     var asked by remember { mutableStateOf(ins.asked) }
     val prog = remember { Animatable(0f) }
     val scr = rememberScrollState()
+    val portalOrigin = with(LocalDensity.current) { Offset(70.dp.toPx(), 56.dp.toPx()) }
 
     LaunchedEffect(Unit) { AdBrain.ins = ins; Snd.warm(act); Sfx.sound = st.bool("snd", true); Sfx.vib = st.bool("vib", true) }
     LaunchedEffect(Unit) { while (true) { delay(50); if (Pause.on) Pause.lost += 50 } }
@@ -134,8 +137,8 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     }
     fun adThen(next: () -> Unit) { if (AdBrain.allow(play)) Ads.show(act, { AdBrain.shown() }, next) else next() }
     fun toggleHome() {
-        home2 = !home2; Snd.play("split")
-        scope.launch { prog.animateTo(if (home2) 1f else 0f, tween(850, easing = FastOutSlowInEasing)) }
+        home2 = !home2; Snd.play("portal")
+        scope.launch { prog.animateTo(if (home2) 1f else 0f, tween(1400, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))) }
     }
     BackHandler(home2 && step == 0) { Sfx.tick(); toggleHome() }
     BackHandler(step != 0) { Sfx.tick(); back() }
@@ -182,7 +185,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
             if (c == null || step == 0) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (home2 && prog.value >= 1f) NewHome(ins, ac, { toggleHome() }, { showData = true })
-                    else if (prog.value > 0f) SplitReveal(prog.value, homeFront) { NewHome(ins, ac, { toggleHome() }, { showData = true }) }
+                    else if (prog.value > 0f) PortalReveal(prog.value, portalOrigin, homeFront) { NewHome(ins, ac, { toggleHome() }, { showData = true }) }
                     else homeFront()
                 }
             } else {
@@ -256,7 +259,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
             }
             Banner()
         }
-        if (!asked) ConsentDialog({ ins.consent(true); ins.foreground(); asked = true }, { ins.consent(false); asked = true })
+        if (!asked) TermsGate { ins.consent(true); ins.foreground(); asked = true }
         if (showData) DataDialog(ins) { showData = false }
         if (info && c != null) InfoDialog(c) { info = false }
         if (paused && c != null) AlertDialog(
