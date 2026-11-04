@@ -106,16 +106,18 @@ private fun build(name: String, v: Int): ShortArray {
         "sq_drop" -> mk(r, 320, .8) { ring(0.0, .9, .07, 420 * j, 1250 * j, .02); ring(.13, .4, .05, 520 * j, 1500 * j, .02) }
         "sq_squish" -> mk(r, 300, .8) { noise(0.0, .25, .6, 1, 500.0, .8) { x -> sin(PI * x) }; ring(0.0, .7, .09, 170 * j, 95 * j, .05) }
         "sq_pop" -> mk(r, 150, .9) { ring(0.0, .9, .03, 720 * j, 340 * j, .015); burst(0.0, .4, .004, 0, 1250 * j, 1.0) }
-        // home screen split: crack, deep rumble, rising whoosh
-        "split" -> mk(r, 1100, .9) {
-            burst(0.0, 1.0, .006, 2, 700.0, .7); ring(0.0, .9, .25, 70.0, 48.0, .05)
-            noise(0.0, .9, .7, 1, 110.0, .7) { x -> sin(PI * x).pow(2) }
-            val bq = Bq(0, 300.0, 1.2)
-            for (i in (.05 * SR).toInt() until (.85 * SR).toInt()) {
-                val x = (i.toDouble() / SR - .05) / .8
-                if (i % 64 == 0) bq.set(250 + 1900 * x * x, 1.2)
-                d[i] += bq.p(nz()) * sin(PI * x) * 1.4
+        // portal opening: deep rising rumble, a rising filtered-noise whoosh, and a shimmering swell at the end
+        "portal" -> mk(r, 1500, .95) {
+            noise(0.0, 1.1, .55, 1, 90.0, .7) { x -> sin(PI * x).pow(1.5) }
+            ring(0.0, .5, .9, 55.0, 40.0, .35)
+            val bq = Bq(0, 300.0, 1.0)
+            for (i in (0.05 * SR).toInt() until (1.15 * SR).toInt()) {
+                val x = (i.toDouble() / SR - .05) / 1.1
+                if (i % 64 == 0) bq.set(220 + 3200 * x * x, 1.0)
+                d[i] += bq.p(nz()) * sin(PI * x) * 1.3
             }
+            ring(.55, .3, .5, 1200.0, 1800.0, .3)
+            ring(.65, .25, .45, 1600.0, 2200.0, .3)
         }
         else -> mk(r, 100, .5) { ring(0.0, 1.0, .03, 660.0) }
     }
@@ -123,7 +125,7 @@ private fun build(name: String, v: Int): ShortArray {
 
 private val VARS = mapOf("c" to 5, "kdown_clicky" to 8, "kup_clicky" to 8, "kdown_thock" to 8, "kup_thock" to 8, "pop_in" to 6, "pop_out" to 6,
     "wrap" to 8, "sw_on" to 4, "sw_off" to 4, "pen_in" to 3, "pen_out" to 3, "zipt" to 6, "whir" to 8, "slime" to 6, "detent" to 3, "pop" to 8)
-private val ONE = listOf("tick", "good", "bad", "win", "sq_boing", "sq_squeak", "sq_bell", "sq_drop", "sq_squish", "sq_pop", "split")
+private val ONE = listOf("tick", "good", "bad", "win", "sq_boing", "sq_squeak", "sq_bell", "sq_drop", "sq_squish", "sq_pop", "portal")
 
 // ---------- One mixer, one audio stream: no limit on sounds, very low delay ----------
 object Snd {
