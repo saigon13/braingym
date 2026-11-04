@@ -1,10 +1,12 @@
 package com.brain.gym
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material3.*
@@ -12,37 +14,81 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.sin
 
-// The home screen splits down the middle: left half slides left, right half slides right, the new screen is revealed behind.
-@Composable fun SplitReveal(p: Float, front: @Composable () -> Unit, back: @Composable () -> Unit) {
+// TODO: replace with the real published Terms / Privacy Policy URL before release.
+const val POLICY_URL = "https://example.com/braingym-policy"
+
+// Portal / iris transition: the old home is punched out by a growing circle centred on `origin`,
+// revealing the new home behind it, with glowing rings drawn over the seam.
+@Composable fun PortalReveal(p: Float, origin: Offset, front: @Composable () -> Unit, back: @Composable () -> Unit) {
+    val ac = LocalAccent.current
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val w = maxWidth; val ac = LocalAccent.current
-        Box(Modifier.fillMaxSize().graphicsLayer { val s = .94f + .06f * p; scaleX = s; scaleY = s; alpha = .35f + .65f * p }) { back() }
-        Box(Modifier.width(w / 2).fillMaxHeight().align(Alignment.CenterStart).offset(x = -(w / 2) * p).clipToBounds()) {
-            Box(Modifier.requiredWidth(w).fillMaxHeight().align(Alignment.CenterStart).background(Color(0xFF0B0B0D))) { front() }
+        val wPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxWidth.toPx() }
+        val hPx = with(androidx.compose.ui.platform.LocalDensity.current) { maxHeight.toPx() }
+        val maxR = kotlin.math.sqrt(wPx * wPx + hPx * hPx)
+        val radius = maxR * p
+
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            val s = .78f + .22f * p
+            scaleX = s; scaleY = s
+            rotationX = (1f - p) * -14f
+            cameraDistance = 14f * density
+            alpha = (p * 1.4f).coerceIn(0f, 1f)
+        }) { back() }
+
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            val s = 1f - .1f * p
+            scaleX = s; scaleY = s
+            rotationX = p * 10f
+            cameraDistance = 14f * density
+            alpha = (1f - p * 1.3f).coerceAtLeast(0f)
+        }.drawWithContent {
+            val path = Path().apply { addOval(Rect(center = origin, radius = radius.coerceAtLeast(1f))) }
+            clipPath(path, clipOp = ClipOp.Difference) { this@drawWithContent.drawContent() }
+        }) { front() }
+
+        if (p in 0.001f..0.999f) Canvas(Modifier.fillMaxSize()) {
+            for (k in 0..2) {
+                val rr = radius * (1f - k * .05f)
+                val a = (1f - p) * (1f - k * .3f)
+                drawCircle(ac.copy(alpha = a.coerceIn(0f, .8f)), rr, origin, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 5f - k))
+            }
+            val n = 10
+            for (i in 0 until n) {
+                val ang = (i * 360f / n + p * 180f) * (Math.PI.toFloat() / 180f)
+                val pr = radius * (0.92f + 0.08f * sin(p * 20f + i))
+                val pt = Offset(origin.x + pr * cos(ang), origin.y + pr * sin(ang))
+                drawCircle(ac.copy(alpha = (1f - p) * .9f), 5f, pt)
+            }
         }
-        Box(Modifier.width(w / 2).fillMaxHeight().align(Alignment.CenterEnd).offset(x = (w / 2) * p).clipToBounds()) {
-            Box(Modifier.requiredWidth(w).fillMaxHeight().align(Alignment.CenterEnd).background(Color(0xFF0B0B0D))) { front() }
-        }
-        Box(Modifier.align(Alignment.Center).fillMaxHeight().width(3.dp).graphicsLayer { alpha = sin(PI.toFloat() * p) }.background(ac))
-        Box(Modifier.fillMaxSize().pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { it.consume() } } } })
+
+        Box(Modifier.fillMaxSize().pointerInput(p) {
+            if (p in 0.001f..0.999f) awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { it.consume() } } }
+        })
     }
 }
 
 // Placeholder: tell me what should go here
 @Composable fun NewHome(ins: Insights, ac: Color, onBack: () -> Unit, onData: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1A1030), Color(0xFF05050A)))).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF140B28), Color(0xFF05050A)))).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("NEW HOME", fontSize = 24.sp, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
             Chip("Back", true, ac) { onBack() }
@@ -58,17 +104,30 @@ import kotlin.math.sin
     }
 }
 
-@Composable fun ConsentDialog(onAllow: () -> Unit, onNo: () -> Unit) = AlertDialog(
-    onDismissRequest = { },
-    title = { Text("Your activity data") },
-    text = {
-        Text("Brain Gym can keep play statistics on this phone: when you open the app, how long you play, which games you play and your scores.\n\n" +
-            "The data stays on your phone. It is only used to decide when ads appear, for example no full-screen ads while you are new, and fewer ads if you play in short bursts.\n\n" +
-            "You can see it, switch it off or delete it any time: tap BRAIN GYM, then Player data.", fontSize = 14.sp)
-    },
-    confirmButton = { TextButton({ Sfx.tick(); onAllow() }) { Text("Allow") } },
-    dismissButton = { TextButton({ Sfx.tick(); onNo() }) { Text("No thanks") } }
-)
+@Composable fun TermsGate(onAccept: () -> Unit) {
+    var checked by remember { mutableStateOf(false) }
+    val uri = LocalUriHandler.current
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF120A24), Color(0xFF05050A)))), Alignment.Center) {
+        Column(
+            Modifier.fillMaxWidth(.88f).clip(RoundedCornerShape(22.dp)).background(Color(0xFF15151C)).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Welcome", fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(18.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = checked, onCheckedChange = { checked = it; Sfx.tick() })
+                Text("I accept the Terms, Conditions and Privacy Policy", fontSize = 13.sp, modifier = Modifier.weight(1f))
+            }
+            TextButton({ Sfx.tick(); uri.openUri(POLICY_URL) }) { Text("View Terms, Conditions & Privacy Policy", fontSize = 12.sp) }
+            Spacer(Modifier.height(8.dp))
+            Button(
+                { Sfx.tick(); onAccept() }, enabled = checked,
+                modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4DD0E1), disabledContainerColor = Color(0xFF4DD0E1).copy(alpha = .25f))
+            ) { Text("OK", fontWeight = FontWeight.Bold, color = Color.Black) }
+        }
+    }
+}
 
 @Composable fun DataDialog(ins: Insights, onClose: () -> Unit) {
     var on by remember { mutableStateOf(ins.on) }; var tick by remember { mutableStateOf(0) }
