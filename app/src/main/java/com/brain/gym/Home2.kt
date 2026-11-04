@@ -5,8 +5,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,8 +50,9 @@ val IG_BLUE = Color(0xFF3897F0)
     val hPx = remember(config, density) { with(density) { config.screenHeightDp.dp.toPx() } }
     val maxR = remember(wPx, hPx) { sqrt(wPx * wPx + hPx * hPx) }
     val radius = maxR * p
-    val pState = remember { mutableStateOf(p) }
-    SideEffect { pState.value = p }
+    // Only true while the animation is actually running, so the touch-blocking layer below
+    // only starts or stops twice total (not every frame).
+    val blocking = p in 0.001f..0.999f
 
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().graphicsLayer {
@@ -75,7 +74,7 @@ val IG_BLUE = Color(0xFF3897F0)
             clipPath(path, clipOp = ClipOp.Difference) { this@drawWithContent.drawContent() }
         }) { front() }
 
-        if (p in 0.001f..0.999f) Canvas(Modifier.fillMaxSize()) {
+        if (blocking) Canvas(Modifier.fillMaxSize()) {
             for (k in 0..2) {
                 val rr = radius * (1f - k * .04f)
                 val a = (1f - p) * (1f - k * .3f)
@@ -83,14 +82,10 @@ val IG_BLUE = Color(0xFF3897F0)
             }
         }
 
-        // One-time gesture setup (not restarted every frame) that checks the CURRENT progress on each touch event.
-        Box(Modifier.fillMaxSize().pointerInput(Unit) {
-            awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false)
-                while (pState.value in 0.001f..0.999f) {
-                    val e = awaitPointerEvent()
-                    e.changes.forEach { it.consume() }
-                    if (e.changes.none { it.pressed }) break
+        Box(Modifier.fillMaxSize().pointerInput(blocking) {
+            if (blocking) {
+                awaitPointerEventScope {
+                    while (true) { awaitPointerEvent().changes.forEach { it.consume() } }
                 }
             }
         })
