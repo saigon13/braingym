@@ -93,7 +93,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     var total by remember { mutableStateOf(st.totalSec()) }
     var fg by remember { mutableStateOf(true) }
     var home2 by remember { mutableStateOf(false) }
-    var showData by remember { mutableStateOf(false) }
+    var showProfile by remember { mutableStateOf(false) }
     val act = LocalContext.current as Activity
     val lo = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
@@ -138,7 +138,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     fun adThen(next: () -> Unit) { if (AdBrain.allow(play)) Ads.show(act, { AdBrain.shown() }, next) else next() }
     fun toggleHome() {
         home2 = !home2; Snd.play("portal")
-        scope.launch { prog.animateTo(if (home2) 1f else 0f, tween(1400, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))) }
+        scope.launch { prog.animateTo(if (home2) 1f else 0f, tween(2400, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))) }
     }
     BackHandler(home2 && step == 0) { Sfx.tick(); toggleHome() }
     BackHandler(step != 0) { Sfx.tick(); back() }
@@ -184,8 +184,8 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
         Column(Modifier.fillMaxSize().background(Brush.verticalGradient(if (god) listOf(Color(0xFF2A0E0E), Color.Black) else listOf(Color(0xFF0E0E10), Color.Black))).padding(16.dp)) {
             if (c == null || step == 0) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    if (home2 && prog.value >= 1f) NewHome(ins, ac, { toggleHome() }, { showData = true })
-                    else if (prog.value > 0f) PortalReveal(prog.value, portalOrigin, homeFront) { NewHome(ins, ac, { toggleHome() }, { showData = true }) }
+                    if (home2 && prog.value >= 1f) NewHome({ toggleHome() }, { showProfile = true })
+                    else if (prog.value > 0f) PortalReveal(prog.value, portalOrigin, homeFront) { NewHome({ toggleHome() }, { showProfile = true }) }
                     else homeFront()
                 }
             } else {
@@ -259,8 +259,8 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
             }
             Banner()
         }
+        if (showProfile) ProfileSheet(ins, st) { showProfile = false }
         if (!asked) TermsGate { ins.consent(true); ins.foreground(); asked = true }
-        if (showData) DataDialog(ins) { showData = false }
         if (info && c != null) InfoDialog(c) { info = false }
         if (paused && c != null) AlertDialog(
             onDismissRequest = { paused = false },
