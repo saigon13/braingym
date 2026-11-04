@@ -36,7 +36,6 @@ import kotlin.math.*
     return { if (Sfx.vib) v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
 }
 
-// Reacts to finger DOWN and finger UP separately (real keys sound different on press and release)
 @Composable fun Modifier.press(onDown: () -> Unit, onUp: () -> Unit): Modifier {
     val dn by rememberUpdatedState(onDown); val up by rememberUpdatedState(onUp)
     return pointerInput(Unit) { awaitEachGesture { val d = awaitFirstDown(); d.consume(); dn(); waitForUpOrCancellation(); up() } }
@@ -148,7 +147,7 @@ import kotlin.math.*
         awaitEachGesture {
             val d = awaitFirstDown(); d.consume()
             val tooth = size.height / 36f
-            val off = pos * size.height - d.position.y     // grab the slider where it is, no jump
+            val off = pos * size.height - d.position.y
             var last = pos
             fun move(y: Float) {
                 val np = ((y + off) / size.height).coerceIn(.04f, .96f)
@@ -179,6 +178,7 @@ import kotlin.math.*
     }
 }
 
+// Fixed: a plain tap no longer kicks off a spin or plays sound. Only an actual drag does.
 @Composable fun Spinner() {
     val ac = LocalAccent.current; val hp = hap()
     var ang by remember { mutableStateOf(0f) }; var w by remember { mutableStateOf(0f) }; var held by remember { mutableStateOf(false) }
@@ -198,20 +198,23 @@ import kotlin.math.*
     }
     Canvas(Modifier.size(300.dp).pointerInput(Unit) {
         awaitEachGesture {
-            val d = awaitFirstDown(); d.consume(); held = true; hp()
+            val d = awaitFirstDown(); d.consume(); held = true
             val c = Offset(size.width / 2f, size.height / 2f); val pi = PI.toFloat()
             var la = atan2(d.position.y - c.y, d.position.x - c.x); var lt = d.uptimeMillis
+            var moved = false
             while (true) {
                 val ev = awaitPointerEvent(); val ch = ev.changes.firstOrNull() ?: break
                 if (!ch.pressed) break
                 val a = atan2(ch.position.y - c.y, ch.position.x - c.x)
                 var dl = a - la; if (dl > pi) dl -= 2 * pi; if (dl < -pi) dl += 2 * pi
                 val deg = dl * 180f / pi; val dtm = maxOf(1L, ch.uptimeMillis - lt)
+                if (abs(deg) > 0.6f) moved = true
                 ang += deg; w = w * .5f + (deg / dtm * 1000f) * .5f
                 la = a; lt = ch.uptimeMillis; ch.consume()
             }
             held = false
-            if (abs(w) < 60f) w += 360f
+            if (moved) { hp(); if (abs(w) < 80f) w += if (w >= 0f) 220f else -220f }
+            else w = 0f
         }
     }) {
         val c = Offset(size.width / 2, size.height / 2); val R = size.width * .3f
@@ -227,35 +230,79 @@ import kotlin.math.*
     }
 }
 
+// Simple damped spring used to animate the slime: slowly settles back to the target, with a touch of overshoot.
+private class Spr { var x = 0f; var v = 0f
+    fun step(target: Float, dt: Float, k: Float, damp: Float) { val a = (target - x) * k - v * damp; v += a * dt; x += v * dt }
+}
+
+// Two fingers stretch the slime along the line between them; letting go lets it slowly spring back.
 @Composable fun Slime() {
     val ac = LocalAccent.current; val hp = hap()
-    var sq by remember { mutableStateOf(0f) }; var ox by remember { mutableStateOf(0f) }; var oy by remember { mutableStateOf(0f) }
+    val sx = remember { Spr() }; val sy = remember { Spr() }; val sq = remember { Spr() }; val st = remember { Spr() }
+    var stretchAng by remember { mutableStateOf(0f) }
+    var frame by remember { mutableStateOf(0) }
+    var soundAcc by remember { mutableStateOf(0f) }
+    val pts = remember { mutableStateMapOf<Long, Offset>() }
+
     LaunchedEffect(Unit) {
         var last = 0L
         while (true) {
             val t = withFrameNanos { it }
             if (last == 0L) { last = t; continue }
-            val dt = ((t - last) / 1e9f).coerceAtMost(.05f); last = t
-            sq *= (1f - 7f * dt).coerceAtLeast(0f); ox *= (1f - 6f * dt).coerceAtLeast(0f); oy *= (1f - 6f * dt).coerceAtLeast(0f)
+            val dt = ((t - last) / 1e9f).coerceAtMost(.032f); last = t
+            val n = pts.size
+            when {
+                n >= 2 -> {
+                    val list = pts.values.toList(); val p0 = list[0]; val p1 = list[1]
+                    val dx = p1.x - p0.x; val dy = p1.y - p0.y; val dist = sqrt(dx * dx + dy * dy)
+                    val mid = Offset((p0.x + p1.x) / 2, (p0.y + p1.y) / 2)
+                    stretchAng = atan2(dy, dx)
+                    st.step((dist / 520f).coerceIn(0f, 2.2f), dt, 30f, 9f)
+                    sx.step((mid.x - 160f) * .25f, dt, 30f, 9f); sy.step((mid.y - 160f) * .25f, dt, 30f, 9f)
+                    sq.step(0f, dt, 30f, 9f)
+                }
+                n == 1 -> {
+                    val p0 = pts.values.first()
+                    sx.step((p0.x - 160f) * .18f, dt, 26f, 8f); sy.step((p0.y - 160f) * .18f, dt, 26f, 8f)
+                    sq.step(.8f, dt, 26f, 8f); st.step(0f, dt, 10f, 3.2f)
+                }
+                else -> { // released: slow springy return, slight jiggle before settling
+                    sx.step(0f, dt, 7f, 3.4f); sy.step(0f, dt, 7f, 3.4f); sq.step(0f, dt, 7f, 3.4f); st.step(0f, dt, 7f, 3.4f)
+                }
+            }
+            frame++
         }
     }
+
     Canvas(Modifier.size(320.dp).pointerInput(Unit) {
-        awaitEachGesture {
-            val d = awaitFirstDown(); d.consume(); sq = 1f; Snd.play("slime", (0..5).random()); hp()
-            var acc = 0f
+        awaitPointerEventScope {
             while (true) {
-                val ev = awaitPointerEvent(); val ch = ev.changes.firstOrNull() ?: break
-                if (!ch.pressed) break
-                val p = ch.positionChange(); ch.consume()
-                ox = (ox + p.x * .6f).coerceIn(-70f, 70f); oy = (oy + p.y * .6f).coerceIn(-70f, 70f); sq = min(1f, sq + .05f)
-                acc += abs(p.x) + abs(p.y); if (acc > 70f) { acc = 0f; Snd.play("slime", (0..5).random(), .8f) }
+                val ev = awaitPointerEvent()
+                var moved = false
+                for (c in ev.changes) {
+                    if (c.pressed) {
+                        if (!pts.containsKey(c.id.value)) { Snd.play("slime", (0..5).random()); hp(); soundAcc = 0f }
+                        pts[c.id.value] = c.position; moved = true
+                    } else pts.remove(c.id.value)
+                    c.consume()
+                }
+                if (moved) {
+                    soundAcc += 1f
+                    if (soundAcc > 11f) { soundAcc = 0f; Snd.play(if (pts.size >= 2) "slime_stretch" else "slime", (0..5).random(), .55f) }
+                }
             }
         }
     }) {
-        val c = Offset(size.width / 2 + ox, size.height / 2 + oy); val base = size.width * .3f
-        val rx = base * (1f + .22f * sq + abs(ox) / 500f); val ry = base * (1f - .18f * sq + abs(oy) / 500f)
-        drawOval(ac.copy(alpha = .9f), Offset(c.x - rx, c.y - ry + base * .1f), Size(rx * 2, ry * 2))
-        drawOval(Color(0x66FFFFFF), Offset(c.x - rx * .55f, c.y - ry * .6f), Size(rx * .6f, ry * .3f))
+        val f = frame
+        val c = Offset(size.width / 2 + sx.x, size.height / 2 + sy.x)
+        val base = size.width * .3f
+        val squish = sq.x; val stretch = st.x
+        val rx = base * (1f + .25f * squish + .55f * stretch * abs(cos(stretchAng)) + .18f * stretch)
+        val ry = base * (1f - .2f * squish + .55f * stretch * abs(sin(stretchAng)) + .18f * stretch)
+        rotate(stretchAng * 180f / PI.toFloat(), c) {
+            drawOval(ac.copy(alpha = .92f), Offset(c.x - rx, c.y - ry * .85f), Size(rx * 2, ry * 1.8f))
+        }
+        drawOval(Color(0x55FFFFFF), Offset(c.x - rx * .5f, c.y - ry * .7f), Size(rx * .55f, ry * .28f))
     }
 }
 
