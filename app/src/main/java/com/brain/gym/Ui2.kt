@@ -37,21 +37,26 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
 
 @Composable fun Sp(h: Int) = Spacer(Modifier.height(h.dp))
 
-@Composable fun Chip(t: String, sel: Boolean, ac: Color, m: Modifier = Modifier, small: Boolean = false, f: () -> Unit) =
-    Button({ Sfx.tick(); f() }, m, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = if (small) 2.dp else 10.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = if (sel) ac else Color(0xFF1C1C20), contentColor = if (sel) Color.Black else Color.White)) {
-        Text(t, fontSize = if (small) 12.sp else 13.sp, maxLines = 1)
+@Composable fun Chip(t: String, sel: Boolean, ac: Color, m: Modifier = Modifier, small: Boolean = false, f: () -> Unit) {
+    Box(m.clip(RoundedCornerShape(12.dp)).background(if (sel) ac else Color(0xFF1C1C20))
+        .fast(null) { Sfx.tick(); f() }
+        .padding(horizontal = if (small) 10.dp else 16.dp, vertical = if (small) 8.dp else 10.dp), Alignment.Center) {
+        Text(t, fontSize = if (small) 12.sp else 13.sp, maxLines = 1, color = if (sel) Color.Black else Color.White)
     }
+}
 
-@Composable fun Big(t: String, ac: Color, f: () -> Unit) =
-    Button({ Sfx.tick(); f() }, Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(14.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = ac, contentColor = Color.Black)) { Text(t, fontWeight = FontWeight.Bold) }
+@Composable fun Big(t: String, ac: Color, f: () -> Unit) {
+    Box(Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp)).background(ac)
+        .fast(null) { Sfx.tick(); f() }, Alignment.Center) {
+        Text(t, fontWeight = FontWeight.Bold, color = Color.Black)
+    }
+}
 
 @Composable fun Tile(x: G, ac: Color, st: Store, m: Modifier, on: () -> Unit) {
     val b = if (x.asmr) null else st.hist(x.id).map { it[3].toDouble() }.let { if (x.lower) it.minOrNull() else it.maxOrNull() }
     Box(m.aspectRatio(1f).clip(RoundedCornerShape(20.dp))
         .background(Brush.verticalGradient(listOf(Color(0xFF26262B), Color(0xFF111114))))
-        .border(1.dp, ac.copy(alpha = 0.35f), RoundedCornerShape(20.dp)).clickable { Sfx.tick(); on() }.padding(6.dp), Alignment.Center) {
+        .border(1.dp, ac.copy(alpha = 0.35f), RoundedCornerShape(20.dp)).fast(null) { Sfx.tick(); on() }.padding(6.dp), Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.size(42.dp).clip(CircleShape).background(ac.copy(.16f)), Alignment.Center) { Icon(icon(x.id), null, tint = ac, modifier = Modifier.size(25.dp)) }
             Spacer(Modifier.height(5.dp))
@@ -103,7 +108,10 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     val scr = rememberScrollState()
     val portalOrigin = with(LocalDensity.current) { Offset(70.dp.toPx(), 56.dp.toPx()) }
 
-    LaunchedEffect(Unit) { AdBrain.ins = ins; Snd.warm(act); Sfx.sound = st.bool("snd", true); Sfx.vib = st.bool("vib", true) }
+    LaunchedEffect(Unit) {
+        AdBrain.ins = ins; Snd.warm(act); NetMonitor.start(act)
+        Sfx.sound = st.bool("snd", true); Sfx.vib = st.bool("vib", true)
+    }
     LaunchedEffect(Unit) { while (true) { delay(50); if (Pause.on) Pause.lost += 50 } }
     DisposableEffect(lo) {
         val ob = LifecycleEventObserver { _, e ->
@@ -138,15 +146,15 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
     fun adThen(next: () -> Unit) { if (AdBrain.allow(play)) Ads.show(act, { AdBrain.shown() }, next) else next() }
     fun toggleHome() {
         home2 = !home2; Snd.play("portal")
-        scope.launch { prog.animateTo(if (home2) 1f else 0f, tween(2400, easing = CubicBezierEasing(0.16f, 1f, 0.3f, 1f))) }
+        scope.launch { prog.animateTo(if (home2) 1f else 0f, tween(3200, easing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f))) }
     }
-    BackHandler(home2 && step == 0) { Sfx.tick(); toggleHome() }
+    BackHandler(home2 && step == 0 && !showProfile) { Sfx.tick(); toggleHome() }
     BackHandler(step != 0) { Sfx.tick(); back() }
 
     val homeFront: @Composable () -> Unit = {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).clickable { toggleHome() }) {
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).fast(null) { toggleHome() }) {
                     Text("BRAIN GYM", fontSize = 26.sp, fontWeight = FontWeight.Black)
                     Text("Memory · reflexes · logic · fun · asmr", color = Color.Gray, fontSize = 12.sp)
                 }
@@ -259,7 +267,7 @@ fun fmt(s: Long) = if (s >= 3600) "${s / 3600}h ${"%02d".format((s % 3600) / 60)
             }
             Banner()
         }
-        if (showProfile) ProfileSheet(ins, st) { showProfile = false }
+        if (showProfile) ProfileSheet(st) { showProfile = false }
         if (!asked) TermsGate { ins.consent(true); ins.foreground(); asked = true }
         if (info && c != null) InfoDialog(c) { info = false }
         if (paused && c != null) AlertDialog(
