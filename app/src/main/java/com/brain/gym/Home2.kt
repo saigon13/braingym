@@ -45,10 +45,10 @@ val IG_BLUE = Color(0xFF3897F0)
 // revealing the new home behind it, with glowing rings drawn over the seam.
 @Composable fun PortalReveal(p: Float, origin: Offset, front: @Composable () -> Unit, back: @Composable () -> Unit) {
     val ac = LocalAccent.current
-    val density = LocalDensity.current
+    val dens = LocalDensity.current
     val config = LocalConfiguration.current
-    val wPx = remember(config, density) { with(density) { config.screenWidthDp.dp.toPx() } }
-    val hPx = remember(config, density) { with(density) { config.screenHeightDp.dp.toPx() } }
+    val wPx = remember(config, dens) { with(dens) { config.screenWidthDp.dp.toPx() } }
+    val hPx = remember(config, dens) { with(dens) { config.screenHeightDp.dp.toPx() } }
     val maxR = remember(wPx, hPx) { sqrt(wPx * wPx + hPx * hPx) }
     val radius = maxR * p
     // Only true while the animation is actually running, so the touch-blocking layer below
@@ -60,7 +60,7 @@ val IG_BLUE = Color(0xFF3897F0)
             val s = .8f + .2f * p
             scaleX = s; scaleY = s
             rotationX = (1f - p) * -10f
-            cameraDistance = 16f * density
+            cameraDistance = 16f * this.density
             alpha = (p * 1.5f).coerceIn(0f, 1f)
         }) { back() }
 
@@ -68,7 +68,7 @@ val IG_BLUE = Color(0xFF3897F0)
             val s = 1f - .08f * p
             scaleX = s; scaleY = s
             rotationX = p * 8f
-            cameraDistance = 16f * density
+            cameraDistance = 16f * this.density
             alpha = (1f - p * 1.3f).coerceAtLeast(0f)
         }.drawWithContent {
             val path = Path().apply { addOval(Rect(center = origin, radius = radius.coerceAtLeast(1f))) }
