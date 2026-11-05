@@ -31,16 +31,11 @@ val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mi
     val n = minOf(gs * gs / 2, gs - 1 + (lv - 1) % 3 + d / 2)
     val tg = remember(lv) { (0 until gs * gs).shuffled().take(n) }
     var show by remember(lv) { mutableStateOf(true) }; var hit by remember(lv) { mutableStateOf(setOf<Int>()) }
-    var wrong by remember(lv) { mutableStateOf(-1) }
     LaunchedEffect(lv) { wait(1200L + n * 100L); show = false }
     Status("Level $lv · ${gs}×$gs grid · $n tiles")
-    Grid(gs, gs) { i ->
-        val bg = if (Ended.on && i == wrong) ROSE else if (Ended.on && i in tg && i !in hit) PURP
-            else if ((show && i in tg) || i in hit) Color.White else Color.Black
-        Cell(bg = bg) {
-            if (!show && !Ended.on && i !in hit) { if (i in tg) { hit = hit + i; if (hit.size == n) { Sfx.good(); lv++ } } else { wrong = i; done(lv - 1.0) } }
-        }
-    }
+    Grid(gs, gs) { i -> Cell(bg = if (((show || Ended.on) && i in tg) || i in hit) Color.White else Color.Black) {
+        if (!show && !Ended.on && i !in hit) { if (i in tg) { hit = hit + i; if (hit.size == n) { Sfx.good(); lv++ } } else done(lv - 1.0) }
+    } }
 }
 
 @Composable fun Words(d: Int, done: (Double) -> Unit) {
@@ -51,14 +46,8 @@ val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mi
     LaunchedEffect(lv) { wait(k * 1000L); ph = 1 }
     Status("Level $lv · $k words")
     if (ph == 0) Text(seen.joinToString("\n"), fontSize = 24.sp, fontWeight = FontWeight.Medium) else {
-        opts.forEach { w ->
-            val ended = Ended.on
-            val col = if (ended) { if (w in seen && w in sel) Color(0xFF66BB6A) else if (w in seen) PURP else if (w in sel) ROSE else Color.Unspecified }
-                else if (w in sel) LocalAccent.current else Color.Unspecified
-            val mark = if (ended) { if (w in seen && w in sel) "✓ " else if (w in seen) "missed: " else if (w in sel) "✗ " else "" } else if (w in sel) "● " else ""
-            Opt(mark + w, col) { if (!ended) sel = if (w in sel) sel - w else sel + w }
-        }
-        if (!Ended.on) Btn("SUBMIT") { if (sel == seen.toSet()) { Sfx.good(); lv++ } else done(lv - 1.0) }
+        opts.forEach { w -> Opt((if (Ended.on && w in seen) "✓ " else if (w in sel) "● " else "") + w) { if (!Ended.on) sel = if (w in sel) sel - w else sel + w } }
+        Btn("SUBMIT") { if (sel == seen.toSet()) { Sfx.good(); lv++ } else done(lv - 1.0) }
     }
 }
 
@@ -72,8 +61,6 @@ val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mi
         done(ok * 50.0 / ps.size)
     }
     Status("$n-back · letter ${L[ls[i]]} · trial ${i + 1}/${ps.size}")
-    Text("Same tile place AND/OR same letter as $n step${if (n > 1) "s" else ""} ago?", fontSize = 13.sp, color = Color(0xFFB0B0B8))
-    Spacer(Modifier.height(8.dp))
     Grid(3, 3) { Cell(bg = if (ps[i] == it) (if (i % 2 == 0) Color.White else Color(0xFFFFB74D)) else Color.Black) }
     Row { Btn("POSITION MATCH") { tp = true }; Btn("LETTER MATCH") { tl = true } }
 }
@@ -82,7 +69,6 @@ val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mi
     val pool = remember { bagList(16, 60) }
     var n by remember { mutableStateOf(1) }; var lit by remember { mutableStateOf(-1) }
     var pos by remember { mutableStateOf(0) }; var show by remember { mutableStateOf(true) }
-    var wrong by remember { mutableStateOf(-1) }; var miss by remember { mutableStateOf(-1) }
     val seq = pool.take(n)
     LaunchedEffect(n) {
         show = true; pos = 0; wait(600)
@@ -90,12 +76,9 @@ val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mi
         show = false
     }
     Status(if (show) "Watch... · length $n" else "Repeat · length $n")
-    Grid(4, 4) { i ->
-        val bg = if (Ended.on && i == wrong) ROSE else if (Ended.on && i == miss) PURP else if (lit == i) Color.White else Color.Black
-        Cell(bg = bg) {
-            if (!show && !Ended.on) { if (i == seq[pos]) { pos++; if (pos == seq.size) { Sfx.good(); n++ } } else { wrong = i; miss = seq[pos]; done(n - 1.0) } }
-        }
-    }
+    Grid(4, 4) { i -> Cell(bg = if (lit == i) Color.White else Color.Black) {
+        if (!show) { if (i == seq[pos]) { pos++; if (pos == seq.size) { Sfx.good(); n++ } } else done(n - 1.0) }
+    } }
 }
 
 @Composable fun RevSpan(d: Int, done: (Double) -> Unit) {
@@ -104,20 +87,14 @@ val WORDS = "apple river chair cloud tiger pencil window garden bridge candle mi
     val len = spanLen(d, lv, intArrayOf(2, 3, 4, 6), intArrayOf(3, 5, 7, 10))
     LaunchedEffect(ph, lv) { if (ph == 0) { s = rndStr("0123456789", len); wait(800L + len * 450L); ph = 1 } }
     Status("Level $lv · $len digits · type it BACKWARDS")
-    if (ph == 0) BigText(s)
+    if (ph == 0 || Ended.on) { if (Ended.on) Text("It was (backwards: ${s.reversed()})", color = Color.Gray); BigText(s) }
     if (ph == 1) {
-        if (Ended.on) {
-            Text("Correct answer (backwards)", color = Color.Gray); BigText(s.reversed(), PURP)
-            Spacer(Modifier.height(10.dp))
-            Text("Your answer", color = Color.Gray); BigText(inp.ifEmpty { "—" }, ROSE)
-        } else {
-            TypedBox(inp)
-            Keypad("num") { k -> when (k) {
-                "⌫" -> { inp = inp.dropLast(1) }
-                "✓" -> { if (inp == s.reversed()) { Sfx.good(); lv++; inp = ""; ph = 0 } else done(lv - 1.0) }
-                else -> { if (inp.length < s.length) inp += k }
-            } }
-        }
+        TypedBox(inp)
+        if (!Ended.on) Keypad("num") { k -> when (k) {
+            "⌫" -> { inp = inp.dropLast(1) }
+            "✓" -> { if (inp == s.reversed()) { Sfx.good(); lv++; inp = ""; ph = 0 } else done(lv - 1.0) }
+            else -> { if (inp.length < s.length) inp += k }
+        } }
     }
 }
 
@@ -154,7 +131,7 @@ val DECKS: Map<String, List<Pair<String, String>>> = mapOf(
     }
     if (q.isNotEmpty()) {
         Status("$m · ${q.size} left · known first try: $fk")
-        Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF1E1E24)).border(1.dp, ac.copy(.6f), RoundedCornerShape(24.dp)).clickable { Sfx.click(); sh = true }, Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF1E1E24)).border(1.dp, ac.copy(.6f), RoundedCornerShape(24.dp)).fast(null) { Sfx.click(); sh = true }, Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(q[0].first, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                 if (sh) { Spacer(Modifier.height(14.dp)); Text(q[0].second, fontSize = 26.sp, color = ac) }
@@ -183,7 +160,7 @@ val DECKS: Map<String, List<Pair<String, String>>> = mapOf(
 @Composable fun Whack(d: Int, done: (Double) -> Unit) {
     val order = remember { bagList(9, 80) }
     var m by remember { mutableStateOf(-1) }; var hit by remember { mutableStateOf(0) }; var left by remember { mutableStateOf(30) }
-    val step = longArrayOf(1000, 800, 650, 450)[d]
+    val step = longArrayOf(850, 650, 480, 340)[d]
     LaunchedEffect(Unit) {
         val cnt = (30000 / step).toInt()
         for (k in 0 until cnt) { m = order[k]; left = ((cnt - k) * step / 1000).toInt(); wait(step) }
@@ -208,12 +185,13 @@ val ON = listOf("68" to "86", "19" to "91", "37" to "73", "25" to "52", "46" to 
         val p = when (ty) { 0 -> lp[r]; 1 -> OL[0]; 2 -> sp[r % sp.size]; 3 -> dp[r % dp.size]; else -> np[r % np.size] }
         if ((0..1).random() == 0) p else p.second to p.first
     }
-    val hue = remember(r) { (0..359).random().toFloat() }; val dl = (0.25f - r * 0.015f - d * 0.03f).coerceAtLeast(0.04f)
+    val hue = remember(r) { (0..359).random().toFloat() }
+    val dl = (0.34f - r * 0.018f - d * 0.02f).coerceAtLeast(0.14f)
     Status("Round ${minOf(r + 1, 12)}/12 · ${listOf("Similar letters", "Shade", "Shapes", "Direction", "Digits")[ty]} · +2s per miss")
     Grid(s, s) { i ->
         val o = i == odd
         fun tap() { if (o) { Sfx.good(); r++; if (r >= 12) done((now() - t0) / 1000.0 + pen) } else { Sfx.bad(); pen += 2 } }
-        if (ty == 1) Cell("", Color.hsv(hue, 0.6f, if (o) 0.85f - dl else 0.85f)) { tap() }
+        if (ty == 1) Cell("", Color.hsv(hue, 0.65f, if (o) 0.55f + dl else 0.55f)) { tap() }
         else Cell(if (o) pr.second else pr.first) { tap() }
     }
 }
@@ -281,48 +259,4 @@ fun press(l: List<Boolean>, i: Int): List<Boolean> {
     return o
 }
 
-@Composable fun Lights(d: Int, done: (Double) -> Unit) {
-    var b by remember { var l = List(25) { false }; repeat(4 + d * 4) { l = press(l, (0..24).random()) }; mutableStateOf(if (l.none { it }) press(l, 0) else l) }
-    var mv by remember { mutableStateOf(0) }
-    Status("Turn all lights off · Moves: $mv")
-    Grid(5, 5) { i -> Cell(bg = if (b[i]) Color.White else Color.Black) { val nb = press(b, i); b = nb; mv++; if (nb.none { it }) done(mv.toDouble()) } }
-}
-
-fun sudoku(): List<Int> {
-    val rr = (0..2).shuffled().flatMap { b -> (0..2).shuffled().map { b * 3 + it } }; val cc = (0..2).shuffled().flatMap { b -> (0..2).shuffled().map { b * 3 + it } }
-    val dg = (1..9).shuffled(); return rr.flatMap { r -> cc.map { c -> dg[(3 * (r % 3) + r / 3 + c) % 9] } }
-}
-fun sOk(b: List<Int>) = (0..8).all { k -> listOf((0..8).map { b[k * 9 + it] }, (0..8).map { b[it * 9 + k] }, (0..8).map { b[(k / 3 * 3 + it / 3) * 9 + (k % 3) * 3 + it % 3] }).all { g -> g.toSet().size == 9 && !g.contains(0) } }
-
-@Composable fun Sudoku(d: Int, done: (Double) -> Unit) {
-    val sol = remember { sudoku() }; val rm = remember { (0..80).shuffled().take(listOf(36, 45, 52, 58)[d]).toSet() }; val t0 = remember { now() }
-    var b by remember { mutableStateOf(sol.indices.map { if (it in rm) 0 else sol[it] }) }; var sel by remember { mutableStateOf(-1) }
-    fun put(n: Int) { if (sel >= 0 && sel in rm) { b = b.toMutableList().also { it[sel] = n }; if (sOk(b)) done((now() - t0) / 1000.0) } }
-    Status("Tap a square, then a number")
-    Grid(9, 9) { i -> Cell(if (b[i] > 0) "${b[i]}" else "", if (sel == i) Color.White else if (i in rm) Color.Black else Color.DarkGray) { sel = i } }
-    Spacer(Modifier.height(10.dp))
-    Keypad("sud") { k -> put(if (k == "⌫") 0 else k.toInt()) }
-}
-
-@Composable fun Mines(d: Int, done: (Double) -> Unit) {
-    val N = 8; val M = listOf(8, 12, 16, 20)[d]
-    var mines by remember { mutableStateOf(setOf<Int>()) }; var op by remember { mutableStateOf(setOf<Int>()) }
-    var fl by remember { mutableStateOf(setOf<Int>()) }
-    fun nb(i: Int) = (-1..1).flatMap { dy -> (-1..1).map { dx -> dx to dy } }.filter { it != (0 to 0) }
-        .map { (i % N + it.first) to (i / N + it.second) }.filter { it.first in 0 until N && it.second in 0 until N }.map { it.second * N + it.first }
-    Status("TAP = dig · HOLD = flag · Mines $M · Flags ${fl.size}")
-    Grid(N, N) { i ->
-        val label = if (i in op) { val c = nb(i).count { it in mines }; if (c > 0) "$c" else "" } else if (i in fl) "⚑" else if (Ended.on && i in mines) "✹" else ""
-        Cell(label, if (i in op) Color.DarkGray else if (Ended.on && i in mines) ROSE else Color.Black, onLong = { if (i !in op && !Ended.on) { fl = if (i in fl) fl - i else fl + i } }) {
-            if (i !in fl && i !in op && !Ended.on) {
-                var mm = mines
-                if (mm.isEmpty()) { mm = ((0 until N * N) - (listOf(i) + nb(i)).toSet()).shuffled().take(M).toSet(); mines = mm }
-                if (i in mm) { done(op.size * 100.0 / (N * N - M)) } else {
-                    val o = op.toMutableSet(); val q = ArrayDeque(listOf(i))
-                    while (q.isNotEmpty()) { val x = q.removeFirst(); if (o.add(x) && nb(x).none { it in mm }) q.addAll(nb(x).filter { it !in o }) }
-                    op = o; if (o.size == N * N - M) done(100.0)
-                }
-            }
-        }
-    }
-}
+@Compos
