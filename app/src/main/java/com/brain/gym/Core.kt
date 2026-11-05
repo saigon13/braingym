@@ -113,13 +113,13 @@ val HOW = mapOf(
     "corsi" to "Like Sequence Memory on a 4 by 4 board. Watch, then repeat. A mistake shows your wrong block in rose and the full correct order in purple.",
     "rev" to "Digits flash on screen. Type them BACKWARDS with the keypad. Every 3 levels you get one more digit.",
     "flash" to "Pick a deck. Think of the answer, tap the card to flip it, then press Knew it or Again. Missed cards come back. Score is the percentage you knew first try. Difficulty sets 10, 20, 30 or 40 cards.",
-    "react" to "Single: tap anywhere as soon as the box turns green. Average of 5: five rounds averaged. Race lights: five red lights come on one by one at a steady beat. One beat after the fifth, all turn green: tap. Early taps are false starts. On God a yellow decoy can appear: do not tap it. Lower is better.",
+    "react" to "Single: tap anywhere as soon as the box turns green. Average of 5: five rounds averaged. Race lights: five red lights come on one by one at a steady beat, then five green lights come on one by one at the same beat. Tap the moment the last green light comes on. Tapping early is a false start. Lower is better.",
     "gonogo" to "Tap anywhere when the circle is GREEN and do nothing when it is RED. 20 rounds. You earn points for right decisions plus a speed bonus for fast taps on green.",
     "stroop" to "A colour word is printed in a different ink colour. Tap the button matching the INK colour, not the word. Points for correct answers plus speed. God has 6 colours and 30 rounds.",
     "schulte" to "Tap the numbers in order, 1, 2, 3 and so on, as fast as you can. Lower time is better. The grid is 3 by 3 on Easy up to 6 by 6 on God.",
     "cmatch" to "Press YES if the meaning of the word matches its ink colour, NO if not. Points for correct answers plus speed. God has 6 colours and 30 rounds.",
     "whack" to "Tap each lit tile. When you hit one, it vanishes and a new one appears at once. 30 seconds. Tiles stay for less time on harder difficulties.",
-    "odd" to "Find the one tile that is different. Types rotate each round: similar letters, a different shade, filled vs outline shapes, arrows and swapped digits. Each wrong tap adds 2 seconds. 12 rounds, lower time is better.",
+    "odd" to "Find the one tile that is different. Types rotate each round: similar letters, a different shade, filled versus outline shapes, arrows and swapped digits. Each wrong tap adds 2 seconds. 12 rounds, lower time is better.",
     "flank" to "Look only at the MIDDLE arrow and press its direction. The arrows around it may point the other way. On God they always do.",
     "g2048" to "Swipe to slide all tiles. Equal numbers merge. Avoid filling the board. Harder difficulties spawn more 4s.",
     "lights" to "Tapping a tile flips it and its four neighbours. Turn every light off in as few moves as you can.",
@@ -140,8 +140,8 @@ val HOW = mapOf(
     "switches" to "Flip the toggle switches. On and off clack differently.",
     "pen" to "Click the pen. One click pushes the tip out, the next pulls it back in.",
     "zip" to "Drag the zipper slider up and down. Every tooth makes a tiny ratchet click, so faster pulls sound faster.",
-    "spinner" to "Tap to kick the spinner or flick around it to spin it faster. The bearing whir follows its speed.",
-    "slime" to "Poke, squish and drag the slime.",
+    "spinner" to "Flick around it to spin it. The bearing whir follows its speed. A plain tap does nothing.",
+    "slime" to "Poke it with one finger, or pull it with two fingers to stretch it. Let go and it slowly settles back into shape.",
     "knob" to "Turn the knob with your finger. Every notch clicks.",
     "buttons" to "Six squishy stress buttons, each with its own sound."
 )
@@ -152,7 +152,6 @@ object Pause { var on by mutableStateOf(false); var lost = 0L }
 object Ended { var on by mutableStateOf(false) }
 val LocalAccent = compositionLocalOf { Color(0xFF4DD0E1) }
 val LocalCell = compositionLocalOf { 56 }
-// Game clock: real time minus the time the game spent paused
 fun now() = System.currentTimeMillis() - Pause.lost
 suspend fun wait(ms: Long) { var left = ms; while (left > 0) { delay(50); if (!Pause.on) left -= 50 } }
 
@@ -221,13 +220,12 @@ fun Modifier.hub(): Modifier = pointerInput(Unit) {
     }
 }
 
-// ---------- Ads: change these switches to control ads ----------
+// ---------- Ads (test IDs: replace before release) ----------
 object AdCfg {
-    const val ENABLED = true            // master switch: false = no ads at all
-    const val BANNER = true             // small banner at the bottom
-    const val INTERSTITIAL_EVERY = 3    // used when the player has not allowed activity data (0 = never)
-    const val REWARDED_HINTS = true     // chess hint needs a rewarded ad
-    // TEST ids from Google. Replace with your own ad unit ids before release
+    const val ENABLED = true
+    const val BANNER = true
+    const val INTERSTITIAL_EVERY = 3
+    const val REWARDED_HINTS = true
     const val BANNER_ID = "ca-app-pub-3940256099942544/6300978111"
     const val INTER_ID = "ca-app-pub-3940256099942544/1033173712"
     const val REWARD_ID = "ca-app-pub-3940256099942544/5224354917"
@@ -247,7 +245,6 @@ object Ads {
             override fun onAdFailedToLoad(e: LoadAdError) { rew = null }
         })
     }
-    // Full-screen ad, only used when the player leaves the game-over panel. AdBrain (Insights.kt) decides WHEN.
     fun show(act: Activity, onShown: () -> Unit, next: () -> Unit) {
         val a = inter
         if (!AdCfg.ENABLED || a == null) { next(); return }
@@ -258,7 +255,6 @@ object Ads {
         }
         a.show(act)
     }
-    // Rewarded: used for chess hints. If no ad is ready the reward is given for free.
     fun reward(act: Activity, ok: () -> Unit) {
         val r = rew
         if (!AdCfg.ENABLED || !AdCfg.REWARDED_HINTS || r == null) { ok(); load(act); return }
@@ -277,93 +273,16 @@ object Ads {
         modifier = Modifier.fillMaxWidth().height(50.dp))
 }
 
-// Filled action button (Submit, Match, Retry ...)
-@Composable fun Btn(t: String, f: () -> Unit) =
-    Button({ Sfx.tick(); f() }, Modifier.padding(4.dp), shape = RoundedCornerShape(12.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = LocalAccent.current, contentColor = Color.Black)) { Text(t, fontWeight = FontWeight.Bold) }
+// Filled action button — reacts on finger-down like the game tiles do.
+@Composable fun Btn(t: String, enabled: Boolean = true, f: () -> Unit) {
+    val ac = LocalAccent.current
+    Box(Modifier.padding(4.dp).clip(RoundedCornerShape(12.dp))
+        .background(if (enabled) ac else ac.copy(alpha = .3f))
+        .fast(null) { if (enabled) { Sfx.tick(); f() } }
+        .padding(horizontal = 16.dp, vertical = 10.dp), Alignment.Center) {
+        Text(t, fontWeight = FontWeight.Bold, color = if (enabled) Color.Black else Color.Black.copy(alpha = .5f))
+    }
+}
 
 // Outlined option button (answers and choices that are part of the game)
-@Composable fun Opt(t: String, c: Color = Color.Unspecified, f: () -> Unit) {
-    val col = if (c == Color.Unspecified) LocalAccent.current else c
-    OutlinedButton({ Sfx.tick(); f() }, Modifier.padding(4.dp), shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, col.copy(.7f)),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (c == Color.Unspecified) Color.White else c)) { Text(t) }
-}
-
-@Composable fun Status(t: String) { SideEffect { Live.txt = t } }
-
-@Composable fun BigText(s: String, c: Color = LocalAccent.current) = Text(s, fontSize = 44.sp, letterSpacing = 6.sp, fontWeight = FontWeight.Bold, color = c)
-
-@Composable fun TypedBox(s: String) {
-    val ac = LocalAccent.current
-    Box(Modifier.padding(vertical = 10.dp).fillMaxWidth(.9f).height(60.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF1B1B1F)).border(1.dp, ac.copy(.5f), RoundedCornerShape(14.dp)), Alignment.Center) {
-        Text(if (s.isEmpty()) "…" else s, fontSize = 28.sp, letterSpacing = 4.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-fun rndStr(pool: String, n: Int): String {
-    val sb = StringBuilder()
-    repeat(n) { var c: Char; do { c = pool.random() } while (sb.isNotEmpty() && c == sb.last()); sb.append(c) }
-    return sb.toString()
-}
-
-@Composable fun Keypad(kind: String, onKey: (String) -> Unit) {
-    val ac = LocalAccent.current
-    val rows = when (kind) {
-        "num" -> listOf("123", "456", "789", "⌫0✓")
-        "sud" -> listOf("12345", "6789⌫")
-        "alpha" -> listOf("QWERTYUIOP", "ASDFGHJKL", "⌫ZXCVBNM✓")
-        else -> listOf("1234567890", "QWERTYUIOP", "ASDFGHJKL", "⌫ZXCVBNM✓")
-    }
-    val kw = when (kind) { "num" -> 80; "sud" -> 58; else -> ((LocalConfiguration.current.screenWidthDp - 40) / 10).coerceAtMost(40) }
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        rows.forEach { r -> Row { r.forEach { ch ->
-            val k = ch.toString()
-            Box(Modifier.padding(2.dp).size(kw.dp, if (kind == "num" || kind == "sud") 56.dp else 48.dp).clip(RoundedCornerShape(10.dp))
-                .background(if (k == "✓") ac else Color(0xFF26262B)).fast(null) { Sfx.click(); onKey(k) }, Alignment.Center) {
-                Text(k, color = if (k == "✓") Color.Black else Color.White, fontSize = 18.sp)
-            }
-        } } }
-    }
-}
-
-@Composable fun Grid(r: Int, c: Int, f: @Composable (Int) -> Unit) {
-    val s = ((LocalConfiguration.current.screenWidthDp - 56) / c).coerceIn(30, 92)
-    CompositionLocalProvider(LocalCell provides s) { Column { repeat(r) { y -> Row { repeat(c) { x -> f(y * c + x) } } } } }
-}
-
-// The whole tile area (including the gaps) reacts to touch. sz > 0 = bigger visual gap between tiles.
-@Composable fun Cell(t: String = "", bg: Color = Color.Black, sz: Int = 0, onLong: (() -> Unit)? = null, on: () -> Unit = {}) {
-    val s = LocalCell.current; val ac = LocalAccent.current; val lit = bg == Color.White
-    val fill = if (lit) ac else if (bg == Color.Black) Color(0xFF1B1B1F) else bg
-    val sh = RoundedCornerShape((s / 5).dp)
-    Box(Modifier.size(s.dp).fast(onLong) { Sfx.click(); on() }.padding(if (sz > 0) sz.dp else 3.dp)) {
-        Box(Modifier.fillMaxSize().clip(sh).background(fill).border(1.dp, if (lit) Color.White.copy(.8f) else ac.copy(.25f), sh), Alignment.Center) {
-            Text(t, color = if (lit) Color.Black else Color.White, fontSize = (s / 3).sp, fontWeight = FontWeight.Medium)
-        }
-    }
-}
-
-@Composable fun Demo(id: String) {
-    val ac = LocalAccent.current; val dim = Color(0xFF2A2A30)
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        when (id) {
-            "stroop", "cmatch" -> { Text("BLUE", color = Color.Red, fontSize = 40.sp, fontWeight = FontWeight.Black); Text("Ink is red, so the answer is red", color = Color.Gray, fontSize = 12.sp) }
-            "react", "gonogo" -> {
-                Row { listOf(Color(0xFFE53935), Color(0xFF1B8A3A)).forEach { Box(Modifier.padding(6.dp).size(40.dp).clip(CircleShape).background(it)) } }
-                Text("Red means wait, green means tap", color = Color.Gray, fontSize = 12.sp)
-            }
-            "num", "rev", "words", "flash" -> { Text("7 4 1 9 2", fontSize = 32.sp, letterSpacing = 6.sp, fontWeight = FontWeight.Bold, color = ac); Text("Memorise it, then answer from memory", color = Color.Gray, fontSize = 12.sp) }
-            else -> {
-                repeat(3) { y -> Row { repeat(3) { x -> Box(Modifier.padding(3.dp).size(30.dp).clip(RoundedCornerShape(8.dp)).background(if (x == 1 && y == 1) ac else dim)) } } }
-                Text("Example: the bright tile is the one to remember or tap", color = Color.Gray, fontSize = 12.sp)
-            }
-        }
-    }
-}
-
-@Composable fun InfoDialog(g: G, onClose: () -> Unit) = AlertDialog(
-    onDismissRequest = onClose,
-    confirmButton = { TextButton({ Sfx.tick(); onClose() }) { Text("Got it") } },
-    title = { Text("How to play: ${g.name}") },
-    text = { Column(Modifier.verticalScroll(rememberScrollState())) { Demo(g.id); Spacer(Modifier.height(12.dp)); Text(HOW[g.id] ?: "", fontSize = 15.sp) } }
-)
+@Compos
