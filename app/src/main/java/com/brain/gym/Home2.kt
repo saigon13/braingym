@@ -1,6 +1,7 @@
 package com.brain.gym
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,8 +42,6 @@ import kotlin.math.sqrt
 const val POLICY_URL = "https://example.com/braingym-policy"
 val IG_BLUE = Color(0xFF3897F0)
 
-// Portal / iris transition: the old home is punched out by a growing circle centred on `origin`,
-// revealing the new home behind it, with glowing rings drawn over the seam.
 @Composable fun PortalReveal(p: Float, origin: Offset, front: @Composable () -> Unit, back: @Composable () -> Unit) {
     val ac = LocalAccent.current
     val dens = LocalDensity.current
@@ -51,8 +50,6 @@ val IG_BLUE = Color(0xFF3897F0)
     val hPx = remember(config, dens) { with(dens) { config.screenHeightDp.dp.toPx() } }
     val maxR = remember(wPx, hPx) { sqrt(wPx * wPx + hPx * hPx) }
     val radius = maxR * p
-    // Only true while the animation is actually running, so the touch-blocking layer below
-    // only starts or stops twice total (not every frame).
     val blocking = p in 0.001f..0.999f
 
     Box(Modifier.fillMaxSize()) {
@@ -100,19 +97,32 @@ val IG_BLUE = Color(0xFF3897F0)
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable fun NetPill() {
+    val on = NetMonitor.online
+    Row(Modifier.clip(RoundedCornerShape(50)).background(Color(0xFF1C1C1C)).padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(if (on) Color(0xFF3DDC73) else Color(0xFF6E6E72)))
+        Spacer(Modifier.width(6.dp))
+        Text(if (on) "Online" else "Offline", color = Color.White, fontSize = 12.sp)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable fun NewHome(onBack: () -> Unit, onProfile: () -> Unit) {
     val ctx = LocalContext.current
     var query by remember { mutableStateOf("") }
+    val myId = remember { DeviceId.get(ctx) }
     val contacts = remember { mutableStateListOf<Contact>().apply { addAll(ContactsStore.load(ctx)) } }
     var photo by remember { mutableStateOf(loadBitmap(ctx, ProfileStore.photoUri(ctx))) }
     var name by remember { mutableStateOf(ProfileStore.name(ctx)) }
+    var toDelete by remember { mutableStateOf<Contact?>(null) }
 
     Column(Modifier.fillMaxSize().background(Color.Black).padding(16.dp)) {
         Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton({ Sfx.tick(); onBack() }) { Icon(Icons.Rounded.ArrowBack, null, tint = Color.White) }
             Spacer(Modifier.weight(1f))
-            Box(Modifier.clip(CircleShape).clickable { Sfx.tick(); onProfile() }) { Avatar(name, photo, 38, IG_BLUE) }
+            NetPill()
+            Spacer(Modifier.width(10.dp))
+            Box(Modifier.clip(CircleShape).fast(null) { onProfile() }) { Avatar(name, photo, 38, IG_BLUE) }
         }
         OutlinedTextField(
             value = query, onValueChange = { query = it },
@@ -131,9 +141,14 @@ val IG_BLUE = Color(0xFF3897F0)
                 Avatar(q, null, 34, Color(0xFF3A3A3E))
                 Spacer(Modifier.width(10.dp))
                 Text(q, color = Color.White, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                if (q.length == 8 && contacts.none { it.id == q }) TextButton({
-                    Sfx.tick(); contacts.add(Contact(q, q)); ContactsStore.save(ctx, contacts); query = ""
-                }) { Text("Add", color = IG_BLUE) }
+                val existing = contacts.firstOrNull { it.id == q }
+                when {
+                    q == myId -> Text("This is your ID", color = Color(0xFF6E6E72), fontSize = 12.sp)
+                    existing != null -> Text(existing.label(), color = Color(0xFF6E6E72), fontSize = 12.sp)
+                    q.length == 8 -> TextButton({
+                        Sfx.tick(); contacts.add(Contact(q, q)); ContactsStore.save(ctx, contacts); query = ""
+                    }) { Text("Request", color = IG_BLUE) }
+                }
             }
             Divider(color = Color(0xFF1C1C1C))
             Spacer(Modifier.height(8.dp))
@@ -149,19 +164,34 @@ val IG_BLUE = Color(0xFF3897F0)
             }
         } else {
             LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-                items(contacts) { ct ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                items(contacts, key = { it.id }) { ct ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .combinedClickable(onClick = { Sfx.tick() }, onLongClick = { Sfx.tick(); toDelete = ct })
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Avatar(ct.nickname, null, 46, Color(0xFF2E2E32))
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(ct.nickname, color = Color.White, fontWeight = FontWeight.Medium)
                             Text(ct.id, color = Color(0xFF6E6E72), fontSize = 12.sp, letterSpacing = 1.sp)
                         }
+                        Text(ct.label(), color = Color(0xFF6E6E72), fontSize = 11.sp)
                     }
                 }
             }
         }
     }
+
+    val del = toDelete
+    if (del != null) AlertDialog(
+        onDismissRequest = { toDelete = null },
+        title = { Text("Remove ${del.nickname}?") },
+        text = { Text("This removes them from your contacts on this phone.") },
+        confirmButton = { TextButton({ Sfx.tick(); contacts.remove(del); ContactsStore.save(ctx, contacts); toDelete = null }) { Text("Remove", color = Color(0xFFE53935)) } },
+        dismissButton = { TextButton({ Sfx.tick(); toDelete = null }) { Text("Cancel") } }
+    )
 }
 
 @Composable fun TermsGate(onAccept: () -> Unit) {
@@ -189,38 +219,19 @@ val IG_BLUE = Color(0xFF3897F0)
     }
 }
 
-@Composable fun DataDialog(ins: Insights, onClose: () -> Unit) {
-    var on by remember { mutableStateOf(ins.on) }; var tick by remember { mutableStateOf(0) }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("Player data (on this phone)") },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Collect activity data", Modifier.weight(1f))
-                    Switch(on, { on = it; ins.consent(it); if (it) ins.foreground(); tick++; Sfx.tick() })
-                }
-                Text("Stays on this device. Used only to decide when ads appear.", fontSize = 12.sp, color = Color.Gray)
-                Spacer(Modifier.height(10.dp))
-                key(tick) { ins.summary().forEach { Text(it, fontSize = 13.sp, modifier = Modifier.padding(vertical = 2.dp)) } }
-            }
-        },
-        confirmButton = { TextButton({ Sfx.tick(); onClose() }) { Text("Close") } },
-        dismissButton = { TextButton({ Sfx.tick(); ins.clear(); tick++ }) { Text("Delete my data") } }
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun ProfileSheet(ins: Insights, st: Store, onClose: () -> Unit) {
+@Composable fun ProfileSheet(st: Store, onClose: () -> Unit) {
+    BackHandler { onClose() }
     val ctx = LocalContext.current
-    var name by remember { mutableStateOf(ProfileStore.name(ctx)) }
+    val uri = LocalUriHandler.current
+    var draft by remember { mutableStateOf(ProfileStore.name(ctx)) }
+    var savedName by remember { mutableStateOf(ProfileStore.name(ctx)) }
     var photoUri by remember { mutableStateOf(ProfileStore.photoUri(ctx)) }
     var photo by remember { mutableStateOf(loadBitmap(ctx, photoUri)) }
-    var showData by remember { mutableStateOf(false) }
     val id = remember { DeviceId.get(ctx) }
     val clip = LocalClipboardManager.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) { ProfileStore.setPhotoUri(ctx, uri.toString()); photoUri = uri.toString(); photo = loadBitmap(ctx, photoUri) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri2: Uri? ->
+        if (uri2 != null) { ProfileStore.setPhotoUri(ctx, uri2.toString()); photoUri = uri2.toString(); photo = loadBitmap(ctx, photoUri) }
     }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -232,21 +243,33 @@ val IG_BLUE = Color(0xFF3897F0)
                 Spacer(Modifier.width(40.dp))
             }
             Spacer(Modifier.height(18.dp))
-            Box(Modifier.align(Alignment.CenterHorizontally).clip(CircleShape).clickable {
-                Sfx.tick(); picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }) { Avatar(name, photo, 96, IG_BLUE) }
+            Box(Modifier.align(Alignment.CenterHorizontally).clip(CircleShape).fast(null) {
+                picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }) { Avatar(savedName, photo, 96, IG_BLUE) }
             Spacer(Modifier.height(8.dp))
-            Text("Tap to change photo", color = Color(0xFF6E6E72), fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+            Row(Modifier.align(Alignment.CenterHorizontally)) {
+                Text("Tap to change photo", color = Color(0xFF6E6E72), fontSize = 12.sp)
+                if (photo != null) {
+                    Spacer(Modifier.width(10.dp))
+                    Text("Remove photo", color = Color(0xFFE53935), fontSize = 12.sp, modifier = Modifier.fast(null) {
+                        ProfileStore.setPhotoUri(ctx, null); photoUri = null; photo = null
+                    })
+                }
+            }
             Spacer(Modifier.height(20.dp))
-            OutlinedTextField(
-                name, { name = it; ProfileStore.setName(ctx, it) }, label = { Text("Name") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = IG_BLUE, unfocusedBorderColor = Color(0xFF2A2A2E),
-                    focusedTextColor = Color.White, unfocusedTextColor = Color.White, cursorColor = IG_BLUE,
-                    focusedContainerColor = Color(0xFF0E0E0E), unfocusedContainerColor = Color(0xFF0E0E0E), focusedLabelColor = IG_BLUE
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    draft, { draft = it }, label = { Text("Name") }, singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = IG_BLUE, unfocusedBorderColor = Color(0xFF2A2A2E),
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White, cursorColor = IG_BLUE,
+                        focusedContainerColor = Color(0xFF0E0E0E), unfocusedContainerColor = Color(0xFF0E0E0E), focusedLabelColor = IG_BLUE
+                    )
                 )
-            )
+                Spacer(Modifier.width(8.dp))
+                Btn("Save", enabled = draft != savedName) { ProfileStore.setName(ctx, draft); savedName = draft }
+            }
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF111114)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -264,11 +287,10 @@ val IG_BLUE = Color(0xFF3897F0)
             Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Vibration", color = Color.White, modifier = Modifier.weight(1f)); Switch(Sfx.vib, { Sfx.vib = it; st.setBool("vib", it); Sfx.tick() })
             }
-            Row(Modifier.fillMaxWidth().clickable { Sfx.tick(); showData = true }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Privacy & activity data", color = Color.White, modifier = Modifier.weight(1f))
+            Row(Modifier.fillMaxWidth().fast(null) { uri.openUri(POLICY_URL) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Privacy Policy", color = Color.White, modifier = Modifier.weight(1f))
                 Icon(Icons.Rounded.ChevronRight, null, tint = Color(0xFF6E6E72))
             }
         }
-        if (showData) DataDialog(ins) { showData = false }
     }
 }
