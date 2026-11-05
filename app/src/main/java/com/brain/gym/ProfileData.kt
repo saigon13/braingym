@@ -2,7 +2,13 @@ package com.brain.gym
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlin.random.Random
@@ -17,16 +23,26 @@ object DeviceId {
     }
 }
 
-class Contact(val id: String, var nickname: String)
+// PENDING: a local-only record meaning "I added this ID" — nothing has actually been sent anywhere yet.
+// There is no transport layer built that can deliver a request or an accept/reject between two devices.
+enum class ReqStatus { PENDING, ACCEPTED }
+class Contact(val id: String, var nickname: String, var status: ReqStatus = ReqStatus.PENDING) {
+    fun label() = if (status == ReqStatus.PENDING) "Request sent" else "Added"
+}
 
 object ContactsStore {
     fun load(c: Context): MutableList<Contact> {
         val p = c.getSharedPreferences("profile", 0)
         return (p.getString("contacts", "") ?: "").split(";").filter { it.contains(":") }
-            .map { val q = it.split(":", limit = 2); Contact(q[0], q.getOrElse(1) { q[0] }) }.toMutableList()
+            .map {
+                val q = it.split(":")
+                val st = q.getOrNull(2)?.let { s -> runCatching { ReqStatus.valueOf(s) }.getOrDefault(ReqStatus.PENDING) } ?: ReqStatus.PENDING
+                Contact(q[0], q.getOrElse(1) { q[0] }, st)
+            }.toMutableList()
     }
     fun save(c: Context, list: List<Contact>) {
-        c.getSharedPreferences("profile", 0).edit().putString("contacts", list.joinToString(";") { "${it.id}:${it.nickname}" }).apply()
+        c.getSharedPreferences("profile", 0).edit()
+            .putString("contacts", list.joinToString(";") { "${it.id}:${it.nickname}:${it.status}" }).apply()
     }
 }
 
@@ -43,4 +59,29 @@ fun loadBitmap(c: Context, uriStr: String?): ImageBitmap? {
         val uri = Uri.parse(uriStr)
         c.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
     } catch (e: Exception) { null }
+}
+
+// Reflects THIS PHONE's own internet connection only. There is no chat server, so this is not
+// presence with another person — just whether this device currently has internet access.
+object NetMonitor {
+    var online by mutableStateOf(false)
+    private var started = false
+    fun start(c: Context) {
+        if (started) return
+        started = true
+        try {
+            val cm = c.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            fun check(): Boolean {
+                val n = cm.activeNetwork ?: return false
+                val cap = cm.getNetworkCapabilities(n) ?: return false
+                return cap.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            }
+            online = check()
+            cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(n: Network) { online = true }
+                override fun onLost(n: Network) { online = check() }
+                override fun onCapabilitiesChanged(n: Network, nc: NetworkCapabilities) { online = check() }
+            })
+        } catch (e: Exception) { }
+    }
 }
