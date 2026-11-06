@@ -290,10 +290,10 @@ import androidx.compose.ui.unit.sp
                     done(op.size * 100.0 / (N * N - M))
                 } else {
                     val o = op.toMutableSet()
-                    val q = ArrayDeque(listOf(i))
-                    while (q.isNotEmpty()) {
-                        val x = q.removeFirst()
-                        if (o.add(x) && nb(x).none { it in mm }) q.addAll(nb(x).filter { it !in o })
+                    val queue = mutableListOf(i)
+                    while (queue.isNotEmpty()) {
+                        val x = queue.removeAt(queue.size - 1)
+                        if (o.add(x) && nb(x).none { it in mm }) queue.addAll(nb(x).filter { it !in o })
                     }
                     op = o
                     if (o.size == N * N - M) done(100.0)
