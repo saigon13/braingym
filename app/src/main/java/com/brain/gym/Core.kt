@@ -285,4 +285,88 @@ object Ads {
 }
 
 // Outlined option button (answers and choices that are part of the game)
-@Compos
+@Composable fun Opt(t: String, c: Color = Color.Unspecified, f: () -> Unit) {
+    val col = if (c == Color.Unspecified) LocalAccent.current else c
+    Box(Modifier.padding(4.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, col.copy(.7f), RoundedCornerShape(12.dp))
+        .fast(null) { Sfx.tick(); f() }.padding(horizontal = 16.dp, vertical = 10.dp), Alignment.Center) {
+        Text(t, color = if (c == Color.Unspecified) Color.White else c)
+    }
+}
+
+@Composable fun Status(t: String) { SideEffect { Live.txt = t } }
+
+@Composable fun BigText(s: String, c: Color = LocalAccent.current) = Text(s, fontSize = 44.sp, letterSpacing = 6.sp, fontWeight = FontWeight.Bold, color = c)
+
+@Composable fun TypedBox(s: String) {
+    val ac = LocalAccent.current
+    Box(Modifier.padding(vertical = 10.dp).fillMaxWidth(.9f).height(60.dp).clip(RoundedCornerShape(14.dp)).background(Color(0xFF1B1B1F)).border(1.dp, ac.copy(.5f), RoundedCornerShape(14.dp)), Alignment.Center) {
+        Text(if (s.isEmpty()) "…" else s, fontSize = 28.sp, letterSpacing = 4.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+fun rndStr(pool: String, n: Int): String {
+    val sb = StringBuilder()
+    repeat(n) { var c: Char; do { c = pool.random() } while (sb.isNotEmpty() && c == sb.last()); sb.append(c) }
+    return sb.toString()
+}
+
+@Composable fun Keypad(kind: String, onKey: (String) -> Unit) {
+    val ac = LocalAccent.current
+    val rows = when (kind) {
+        "num" -> listOf("123", "456", "789", "⌫0✓")
+        "sud" -> listOf("12345", "6789⌫")
+        "alpha" -> listOf("QWERTYUIOP", "ASDFGHJKL", "⌫ZXCVBNM✓")
+        else -> listOf("1234567890", "QWERTYUIOP", "ASDFGHJKL", "⌫ZXCVBNM✓")
+    }
+    val kw = when (kind) { "num" -> 80; "sud" -> 58; else -> ((LocalConfiguration.current.screenWidthDp - 40) / 10).coerceAtMost(40) }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        rows.forEach { r -> Row { r.forEach { ch ->
+            val k = ch.toString()
+            Box(Modifier.padding(2.dp).size(kw.dp, if (kind == "num" || kind == "sud") 56.dp else 48.dp).clip(RoundedCornerShape(10.dp))
+                .background(if (k == "✓") ac else Color(0xFF26262B)).fast(null) { Sfx.click(); onKey(k) }, Alignment.Center) {
+                Text(k, color = if (k == "✓") Color.Black else Color.White, fontSize = 18.sp)
+            }
+        } } }
+    }
+}
+
+@Composable fun Grid(r: Int, c: Int, f: @Composable (Int) -> Unit) {
+    val s = ((LocalConfiguration.current.screenWidthDp - 56) / c).coerceIn(30, 92)
+    CompositionLocalProvider(LocalCell provides s) { Column { repeat(r) { y -> Row { repeat(c) { x -> f(y * c + x) } } } } }
+}
+
+@Composable fun Cell(t: String = "", bg: Color = Color.Black, sz: Int = 0, onLong: (() -> Unit)? = null, on: () -> Unit = {}) {
+    val s = LocalCell.current; val ac = LocalAccent.current; val lit = bg == Color.White
+    val fill = if (lit) ac else if (bg == Color.Black) Color(0xFF1B1B1F) else bg
+    val sh = RoundedCornerShape((s / 5).dp)
+    Box(Modifier.size(s.dp).fast(onLong) { Sfx.click(); on() }.padding(if (sz > 0) sz.dp else 3.dp)) {
+        Box(Modifier.fillMaxSize().clip(sh).background(fill).border(1.dp, if (lit) Color.White.copy(.8f) else ac.copy(.25f), sh), Alignment.Center) {
+            Text(t, color = if (lit) Color.Black else Color.White, fontSize = (s / 3).sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable fun Demo(id: String) {
+    val ac = LocalAccent.current; val dim = Color(0xFF2A2A30)
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+        when (id) {
+            "stroop", "cmatch" -> { Text("BLUE", color = Color.Red, fontSize = 40.sp, fontWeight = FontWeight.Black); Text("Ink is red, so the answer is red", color = Color.Gray, fontSize = 12.sp) }
+            "react", "gonogo" -> {
+                Row { listOf(Color(0xFFE53935), Color(0xFF1B8A3A)).forEach { Box(Modifier.padding(6.dp).size(40.dp).clip(CircleShape).background(it)) } }
+                Text("Red means wait, green means tap", color = Color.Gray, fontSize = 12.sp)
+            }
+            "num", "rev", "words", "flash" -> { Text("7 4 1 9 2", fontSize = 32.sp, letterSpacing = 6.sp, fontWeight = FontWeight.Bold, color = ac); Text("Memorise it, then answer from memory", color = Color.Gray, fontSize = 12.sp) }
+            else -> {
+                repeat(3) { y -> Row { repeat(3) { x -> Box(Modifier.padding(3.dp).size(30.dp).clip(RoundedCornerShape(8.dp)).background(if (x == 1 && y == 1) ac else dim)) } } }
+                Text("Example: the bright tile is the one to remember or tap", color = Color.Gray, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable fun InfoDialog(g: G, onClose: () -> Unit) = AlertDialog(
+    onDismissRequest = onClose,
+    confirmButton = { TextButton({ Sfx.tick(); onClose() }) { Text("Got it") } },
+    title = { Text("How to play: ${g.name}") },
+    text = { Column(Modifier.verticalScroll(rememberScrollState())) { Demo(g.id); Spacer(Modifier.height(12.dp)); Text(HOW[g.id] ?: "", fontSize = 15.sp) } }
+)
