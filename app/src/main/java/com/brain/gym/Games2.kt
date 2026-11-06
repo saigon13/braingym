@@ -259,4 +259,39 @@ fun press(l: List<Boolean>, i: Int): List<Boolean> {
     return o
 }
 
-@Compos
+@Composable fun Lights(d: Int, done: (Double) -> Unit) {
+    var b by remember { var l = List(25) { false }; repeat(4 + d * 4) { l = press(l, (0..24).random()) }; mutableStateOf(if (l.none { it }) press(l, 0) else l) }
+    var mv by remember { mutableStateOf(0) }
+    Status("Turn all lights off · Moves: $mv")
+    Grid(5, 5) { i -> Cell(bg = if (b[i]) Color.White else Color.Black) { val nb = press(b, i); b = nb; mv++; if (nb.none { it }) done(mv.toDouble()) } }
+}
+
+fun sudoku(): List<Int> {
+    val rr = (0..2).shuffled().flatMap { b -> (0..2).shuffled().map { b * 3 + it } }; val cc = (0..2).shuffled().flatMap { b -> (0..2).shuffled().map { b * 3 + it } }
+    val dg = (1..9).shuffled(); return rr.flatMap { r -> cc.map { c -> dg[(3 * (r % 3) + r / 3 + c) % 9] } }
+}
+fun sOk(b: List<Int>) = (0..8).all { k -> listOf((0..8).map { b[k * 9 + it] }, (0..8).map { b[it * 9 + k] }, (0..8).map { b[(k / 3 * 3 + it / 3) * 9 + (k % 3) * 3 + it % 3] }).all { g -> g.toSet().size == 9 && !g.contains(0) } }
+
+@Composable fun Sudoku(d: Int, done: (Double) -> Unit) {
+    val sol = remember { sudoku() }; val rm = remember { (0..80).shuffled().take(listOf(36, 45, 52, 58)[d]).toSet() }; val t0 = remember { now() }
+    var b by remember { mutableStateOf(sol.indices.map { if (it in rm) 0 else sol[it] }) }; var sel by remember { mutableStateOf(-1) }
+    fun put(n: Int) { if (sel >= 0 && sel in rm) { b = b.toMutableList().also { it[sel] = n }; if (sOk(b)) done((now() - t0) / 1000.0) } }
+    Status("Tap a square, then a number")
+    Grid(9, 9) { i -> Cell(if (b[i] > 0) "${b[i]}" else "", if (sel == i) Color.White else if (i in rm) Color.Black else Color.DarkGray) { sel = i } }
+    Spacer(Modifier.height(10.dp))
+    Keypad("sud") { k -> put(if (k == "⌫") 0 else k.toInt()) }
+}
+
+@Composable fun Mines(d: Int, done: (Double) -> Unit) {
+    val N = 8; val M = listOf(8, 12, 16, 20)[d]
+    var mines by remember { mutableStateOf(setOf<Int>()) }; var op by remember { mutableStateOf(setOf<Int>()) }
+    var fl by remember { mutableStateOf(setOf<Int>()) }
+    fun nb(i: Int) = (-1..1).flatMap { dy -> (-1..1).map { dx -> dx to dy } }.filter { it != (0 to 0) }
+        .map { (i % N + it.first) to (i / N + it.second) }.filter { it.first in 0 until N && it.second in 0 until N }.map { it.second * N + it.first }
+    Status("TAP = dig · HOLD = flag · Mines $M · Flags ${fl.size}")
+    Grid(N, N) { i ->
+        val label = if (i in op) { val c = nb(i).count { it in mines }; if (c > 0) "$c" else "" } else if (i in fl) "⚑" else if (Ended.on && i in mines) "✹" else ""
+        Cell(label, if (i in op) Color.DarkGray else if (Ended.on && i in mines) ROSE else Color.Black, onLong = { if (i !in op && !Ended.on) { fl = if (i in fl) fl - i else fl + i } }) {
+            if (i !in fl && i !in op && !Ended.on) {
+                var mm = mines
+                if (mm.isEmpty()) { mm = ((0 until N * N) - (listOf(i) + nb(i)).toSet()).shuffled().take(M).toSet(); mines = mm }
