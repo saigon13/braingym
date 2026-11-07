@@ -283,15 +283,27 @@ fun sOk(b: List<Int>) = (0..8).all { k -> listOf((0..8).map { b[k * 9 + it] }, (
 }
 
 @Composable fun Mines(d: Int, done: (Double) -> Unit) {
-    val N = 8; val M = listOf(8, 12, 16, 20)[d]
-    var mines by remember { mutableStateOf(setOf<Int>()) }; var op by remember { mutableStateOf(setOf<Int>()) }
+    val N = 8
+    val M = listOf(8, 12, 16, 20)[d]
+    var mines by remember { mutableStateOf(setOf<Int>()) }
+    var op by remember { mutableStateOf(setOf<Int>()) }
     var fl by remember { mutableStateOf(setOf<Int>()) }
-    fun nb(i: Int) = (-1..1).flatMap { dy -> (-1..1).map { dx -> dx to dy } }.filter { it != (0 to 0) }
-        .map { (i % N + it.first) to (i / N + it.second) }.filter { it.first in 0 until N && it.second in 0 until N }.map { it.second * N + it.first }
+    fun nb(i: Int): List<Int> {
+        return (-1..1).flatMap { dy -> (-1..1).map { dx -> dx to dy } }.filter { it != (0 to 0) }
+            .map { (i % N + it.first) to (i / N + it.second) }
+            .filter { it.first in 0 until N && it.second in 0 until N }
+            .map { it.second * N + it.first }
+    }
     Status("TAP = dig · HOLD = flag · Mines $M · Flags ${fl.size}")
     Grid(N, N) { i ->
-        val label = if (i in op) { val c = nb(i).count { it in mines }; if (c > 0) "$c" else "" } else if (i in fl) "⚑" else if (Ended.on && i in mines) "✹" else ""
-        Cell(label, if (i in op) Color.DarkGray else if (Ended.on && i in mines) ROSE else Color.Black, onLong = { if (i !in op && !Ended.on) { fl = if (i in fl) fl - i else fl + i } }) {
+        val label = if (i in op) {
+            val c = nb(i).count { it in mines }
+            if (c > 0) "$c" else ""
+        } else if (i in fl) "⚑" else if (Ended.on && i in mines) "✹" else ""
+        Cell(
+            label,
+            if (i in op) Color.DarkGray else if (Ended.on && i in mines) ROSE else Color.Black,
+            onLong = { if (i !in op && !Ended.on) { fl = if (i in fl) fl - i else fl + i } }
+        ) {
             if (i !in fl && i !in op && !Ended.on) {
-                var mm = mines
-                if (mm.isEmpty()) { mm = ((0 until N * N) - (listOf(i) + nb(i)).toSet()).shuffled().take(M).toSet(); mines = mm }
+                
