@@ -306,4 +306,24 @@ fun sOk(b: List<Int>) = (0..8).all { k -> listOf((0..8).map { b[k * 9 + it] }, (
             onLong = { if (i !in op && !Ended.on) { fl = if (i in fl) fl - i else fl + i } }
         ) {
             if (i !in fl && i !in op && !Ended.on) {
-                
+                var mm = mines
+                if (mm.isEmpty()) {
+                    mm = ((0 until N * N) - (listOf(i) + nb(i)).toSet()).shuffled().take(M).toSet()
+                    mines = mm
+                }
+                if (i in mm) {
+                    done(op.size * 100.0 / (N * N - M))
+                } else {
+                    val o = op.toMutableSet()
+                    val queue = mutableListOf(i)
+                    while (queue.isNotEmpty()) {
+                        val x = queue.removeAt(queue.size - 1)
+                        if (o.add(x) && nb(x).none { it in mm }) queue.addAll(nb(x).filter { it !in o })
+                    }
+                    op = o
+                    if (o.size == N * N - M) done(100.0)
+                }
+            }
+        }
+    }
+}
